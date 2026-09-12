@@ -1,290 +1,238 @@
 import io
 import re
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(
-    page_title="Daily Levels — AI Customer Acquisition",
-    page_icon="📊",
-    layout="wide",
-)
+st.set_page_config(page_title="Daily Levels — AI Customer Acquisition", page_icon="📈", layout="wide")
 
 st.title("Daily Levels — AI Customer Acquisition")
-st.caption("CSV-based public trading-signal analysis • Rule-based MVP • No automated outreach")
+st.caption("MVP v2 • Public-signal analysis • Transparent scoring • No automated outreach")
 
-INTENT_TERMS = {
-    "support": 10,
-    "resistance": 10,
-    "support/resistance": 12,
-    "levels": 8,
-    "today": 5,
-    "tomorrow": 5,
-    "next level": 8,
-    "key level": 8,
-    "entry": 5,
-    "target": 5,
-    "trade": 4,
-    "trading": 4,
-    "trader": 4,
-    "position": 3,
-    "long": 3,
-    "short": 3,
-    "calculate": 6,
-    "where": 2,
-}
-
+# ---------- Dictionaries ----------
 MARKETS = {
-    "India": [
-        "nifty", "nifty 50", "bank nifty", "banknifty", "sensex",
-        "indian options", "options"
-    ],
-    "Crypto": ["btc", "bitcoin", "eth", "ethereum", "crypto"],
-    "US": ["s&p", "s&p 500", "spx", "nasdaq", "qqq", "dow", "nyse", "us stocks"],
-    "Forex": ["forex", "eurusd", "eur/usd", "gbpusd", "gbp/usd", "xauusd", "gold"],
+    "India (NIFTY)": [r"\bnifty\b", r"\bnifty\s*50\b"],
+    "India (Bank Nifty)": [r"\bbank\s*nifty\b", r"\bbanknifty\b"],
+    "India (Sensex)": [r"\bsensex\b"],
+    "India (Options)": [r"\bindian\s+options?\b"],
+    "Crypto (BTC)": [r"\bbtc\b", r"\bbitcoin\b"],
+    "Crypto (ETH)": [r"\beth\b", r"\bethereum\b"],
+    "Crypto": [r"\bcrypto\b", r"\bcryptocurrency\b"],
+    "US (S&P 500)": [r"\bs&p\b", r"\bspx\b", r"\bs&p\s*500\b"],
+    "US (Nasdaq)": [r"\bnasdaq\b", r"\bqqq\b"],
+    "US (Dow)": [r"\bdow\b"],
+    "US Stocks": [r"\bus\s+stocks?\b", r"\bnyse\b"],
+    "Forex (EUR/USD)": [r"\beur\s*/?\s*usd\b", r"\beurusd\b"],
+    "Forex (GBP/USD)": [r"\bgbp\s*/?\s*usd\b", r"\bgbpusd\b"],
+    "Gold / XAUUSD": [r"\bxau\s*/?\s*usd\b", r"\bxauusd\b", r"\bgold\b"],
+    "Forex": [r"\bforex\b"],
 }
 
-REQUEST_PATTERNS = [
-    r"\bwhat(?:'s| is)\b",
-    r"\bwhere\b",
-    r"\bhow do\b",
-    r"\bcan someone\b",
-    r"\bplease\b",
-    r"\bfor tomorrow\b",
-    r"\bfor today\b",
-    r"\bnext\b",
-    r"\bkey level\b",
+# Transparent point system. Max = 100.
+RULES = [
+    ("Explicit support/resistance or levels request", 45, [
+        r"\bsupport\s*(?:and|&|/)\s*resistance\b",
+        r"\bsupport\b", r"\bresistance\b", r"\blevels?\b",
+        r"\bkey level\b", r"\bnext level\b",
+    ]),
+    ("Active trading language", 25, [
+        r"\btrade\b", r"\btrading\b", r"\btrader\b", r"\bentry\b",
+        r"\bposition\b", r"\blong\b", r"\bshort\b", r"\btarget\b",
+        r"\bcall\b", r"\bput\b",
+    ]),
+    ("Short-term/session context", 15, [
+        r"\btoday\b", r"\btomorrow\b", r"\bnext\b",
+        r"\bthis session\b", r"\bfor tomorrow\b", r"\bfor today\b",
+    ]),
+    ("Direct question/request", 5, [
+        r"\?", r"\bwhere\b", r"\bwhat\b", r"\bhow\b", r"\bcan someone\b",
+        r"\banyone\b",
+    ]),
+    ("Market detected", 10, []),
 ]
 
-REQUIRED_COLUMNS = ["platform", "url", "text"]
+SPAM_RULES = [
+    ("Possible promotional/spam language", -25, [
+        r"\bgiveaway\b", r"\bpromo code\b", r"\bairdrop\b",
+        r"\bfree money\b", r"\bcasino\b", r"\bbetting\b",
+        r"\bsubscribe\s+to\s+my\s+channel\b",
+    ])
+]
 
+def clean(x):
+    return "" if pd.isna(x) else str(x).strip()
 
-def normalize(value):
-    return re.sub(r"\s+", " ", str(value).strip().lower())
+def found_any(text, patterns):
+    return any(re.search(p, text, re.I) for p in patterns)
 
-
-def contains_term(text, term):
-    text = normalize(text)
-    term = normalize(term)
-    if "/" in term or " " in term or "&" in term:
-        return term in text
-    return bool(re.search(rf"\b{re.escape(term)}\b", text))
-
-
-def detect_markets(text):
-    found = []
-    for market, terms in MARKETS.items():
-        matched = [term for term in terms if contains_term(text, term)]
-        if matched:
-            found.append((market, matched))
-    return found
-
-
-def analyze_signal(text):
-    raw_text = str(text)
-    normalized = normalize(raw_text)
+def analyze(text):
+    text = clean(text)
+    points = 0
     reasons = []
-    score = 0
+    matched_terms = []
 
-    matched_intent = []
-    for term, points in INTENT_TERMS.items():
-        if contains_term(normalized, term):
-            score += points
-            matched_intent.append(term)
+    for label, weight, patterns in RULES:
+        if label == "Market detected":
+            continue
+        hits = [p for p in patterns if re.search(p, text, re.I)]
+        if hits:
+            points += weight
+            reasons.append(f"+{weight} {label}")
+            matched_terms.extend([p.strip(r"\b").replace(r"\s*", " ") for p in hits])
 
-    # Prevent repeated synonyms from inflating the score excessively.
-    if matched_intent:
-        reasons.append("Intent terms: " + ", ".join(matched_intent))
+    market_hits = []
+    for market, patterns in MARKETS.items():
+        if found_any(text, patterns):
+            market_hits.append(market)
 
-    markets = detect_markets(normalized)
-    if markets:
-        score += min(15, 5 * len(markets))
-        reasons.append(
-            "Market detected: " + "; ".join(
-                f"{market} ({', '.join(terms)})" for market, terms in markets
-            )
-        )
+    if market_hits:
+        points += 10
+        reasons.append("+10 Market detected")
 
-    request_matches = [
-        pattern for pattern in REQUEST_PATTERNS
-        if re.search(pattern, normalized)
-    ]
-    if request_matches:
-        score += min(12, 3 * len(request_matches))
-        reasons.append("Question/request language detected")
+    spam_hits = []
+    for label, weight, patterns in SPAM_RULES:
+        hits = [p for p in patterns if re.search(p, text, re.I)]
+        if hits:
+            points += weight
+            reasons.append(f"{weight} {label}")
+            spam_hits.extend(hits)
 
-    if "support" in normalized and "resistance" in normalized:
-        score += 8
-        reasons.append("Explicit support-and-resistance combination")
-
-    if len(normalized.split()) < 3:
-        score -= 5
-        reasons.append("Very short text; context may be limited")
-
-    score = max(0, min(100, int(score)))
-
-    if score >= 75:
+    score = max(0, min(100, points))
+    if score >= 90:
         category = "HOT"
-    elif score >= 60:
+    elif score >= 75:
         category = "WARM"
+    elif score >= 60:
+        category = "POSSIBLE"
     else:
         category = "LOW"
 
-    market_names = [market for market, _ in markets]
-    market = ", ".join(market_names) if market_names else "Unknown"
+    explanation = " | ".join(reasons) if reasons else "No strong trading-intent signals detected"
+    if matched_terms:
+        term_text = ", ".join(dict.fromkeys(matched_terms))
+        explanation = f"Intent terms: {term_text} | {explanation}"
 
-    if not reasons:
-        reasons.append("No strong rule-based signals detected")
-
-    return {
-        "market": market,
+    return pd.Series({
         "intent_score": score,
         "category": category,
-        "signal_explanation": " | ".join(reasons),
-        "matched_keywords": ", ".join(matched_intent),
-    }
+        "market": ", ".join(market_hits) if market_hits else "Unknown",
+        "matched_terms": ", ".join(dict.fromkeys(matched_terms)),
+        "signal_explanation": explanation,
+    })
 
+def validate(df):
+    required = {"platform", "url", "text"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError("Missing required columns: " + ", ".join(sorted(missing)))
 
-def analyze_dataframe(df):
-    output = df.copy()
-    analysis = output["text"].apply(analyze_signal).apply(pd.Series)
-    return pd.concat([output, analysis], axis=1)
+# ---------- Input ----------
+st.subheader("1. Load public signals")
+uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
-
-def sample_dataframe():
-    return pd.DataFrame([
-        {
-            "platform": "YouTube",
-            "url": "https://example.com/video1",
-            "text": "NIFTY support for tomorrow?",
-        },
-        {
-            "platform": "Reddit",
-            "url": "https://example.com/post1",
-            "text": "BTC next resistance?",
-        },
-        {
-            "platform": "YouTube",
-            "url": "https://example.com/video2",
-            "text": "How do you calculate Bank Nifty levels?",
-        },
-        {
-            "platform": "Reddit",
-            "url": "https://example.com/post2",
-            "text": "I trade stocks and want to learn more.",
-        },
-        {
-            "platform": "X",
-            "url": "https://example.com/post3",
-            "text": "What is the key level for tomorrow on gold?",
-        },
-    ])
-
-
-if "results" not in st.session_state:
-    st.session_state.results = None
-
-with st.sidebar:
-    st.header("Input")
-    uploaded = st.file_uploader("Upload public signals CSV", type=["csv"])
-    st.write("Required columns:")
-    st.code("platform,url,text", language="text")
-
-    if st.button("Load sample CSV", use_container_width=True):
-        st.session_state.results = analyze_dataframe(sample_dataframe())
-        st.success("Sample data loaded.")
-
-    st.divider()
-    st.header("Scoring bands")
-    st.write("HOT: 75–100")
-    st.write("WARM: 60–74")
-    st.write("LOW: 0–59")
-    st.caption("Scores indicate rule-based intent/fit signals, not buying probability.")
-
-if uploaded is not None:
+if uploaded:
     try:
-        incoming = pd.read_csv(uploaded)
-        missing = [column for column in REQUIRED_COLUMNS if column not in incoming.columns]
-        if missing:
-            st.error("Missing required column(s): " + ", ".join(missing))
-        elif st.button("Analyze uploaded CSV", type="primary"):
-            clean = incoming[REQUIRED_COLUMNS].fillna("")
-            st.session_state.results = analyze_dataframe(clean)
-            st.success(f"Analyzed {len(clean):,} public signals.")
-    except Exception as exc:
-        st.error(f"Could not read the CSV: {exc}")
+        raw = pd.read_csv(uploaded)
+        validate(raw)
+    except Exception as e:
+        st.error(str(e))
+        st.stop()
+else:
+    raw = pd.read_csv(Path(__file__).parent / "data" / "sample_signals.csv")
+    st.info("Using the included 30-signal sample dataset. Upload your own CSV to test real public signals.")
 
-results = st.session_state.results
+for c in ["platform", "url", "text"]:
+    raw[c] = raw[c].map(clean)
 
-if results is None:
-    st.info("Upload a CSV or load the sample CSV to begin.")
-    st.subheader("Expected CSV format")
-    st.dataframe(sample_dataframe(), use_container_width=True, hide_index=True)
-    st.stop()
+analysis = raw["text"].apply(analyze)
+results = pd.concat([raw.reset_index(drop=True), analysis.reset_index(drop=True)], axis=1)
 
-st.subheader("Overview")
-metric_cols = st.columns(6)
-metric_cols[0].metric("Total Signals", len(results))
-metric_cols[1].metric("HOT", int((results["category"] == "HOT").sum()))
-metric_cols[2].metric("WARM", int((results["category"] == "WARM").sum()))
-metric_cols[3].metric("LOW", int((results["category"] == "LOW").sum()))
-metric_cols[4].metric("Markets Detected", int((results["market"] != "Unknown").sum()))
-metric_cols[5].metric(
-    "Potential Leads",
-    int(results["category"].isin(["HOT", "WARM"]).sum()),
-)
+if "date" not in results:
+    results["date"] = ""
 
-st.divider()
-st.subheader("Filter results")
+# ---------- Sidebar filters ----------
+st.sidebar.header("Filters")
+platform_options = ["All"] + sorted(results["platform"].dropna().unique().tolist())
+market_options = ["All"] + sorted(results["market"].dropna().unique().tolist())
+category_options = ["All", "HOT", "WARM", "POSSIBLE", "LOW"]
 
-filter_cols = st.columns(5)
-platform_options = ["All"] + sorted(results["platform"].astype(str).unique().tolist())
-market_options = ["All"] + sorted(results["market"].astype(str).unique().tolist())
-category_options = ["All", "HOT", "WARM", "LOW"]
-
-selected_platform = filter_cols[0].selectbox("Platform", platform_options)
-selected_market = filter_cols[1].selectbox("Market", market_options)
-selected_category = filter_cols[2].selectbox("Category", category_options)
-minimum_score = filter_cols[3].slider("Minimum score", 0, 100, 0)
-keyword_filter = filter_cols[4].text_input("Keyword contains", "")
+platform = st.sidebar.selectbox("Platform", platform_options)
+market = st.sidebar.selectbox("Market", market_options)
+category = st.sidebar.selectbox("Category", category_options)
+min_score = st.sidebar.slider("Minimum score", 0, 100, 0)
+keyword = st.sidebar.text_input("Keyword contains", "")
 
 filtered = results.copy()
-if selected_platform != "All":
-    filtered = filtered[filtered["platform"].astype(str) == selected_platform]
-if selected_market != "All":
-    filtered = filtered[filtered["market"].astype(str) == selected_market]
-if selected_category != "All":
-    filtered = filtered[filtered["category"] == selected_category]
-filtered = filtered[filtered["intent_score"] >= minimum_score]
-if keyword_filter.strip():
-    mask = filtered.apply(
-        lambda row: keyword_filter.lower() in (
-            str(row["text"]) + " " +
-            str(row["matched_keywords"]) + " " +
-            str(row["signal_explanation"])
-        ).lower(),
-        axis=1,
-    )
-    filtered = filtered[mask]
+if platform != "All":
+    filtered = filtered[filtered["platform"] == platform]
+if market != "All":
+    filtered = filtered[filtered["market"].str.contains(re.escape(market), case=False, na=False)]
+if category != "All":
+    filtered = filtered[filtered["category"] == category]
+filtered = filtered[filtered["intent_score"] >= min_score]
+if keyword.strip():
+    filtered = filtered[filtered["text"].str.contains(re.escape(keyword.strip()), case=False, na=False)]
 
-st.caption(f"Showing {len(filtered):,} of {len(results):,} signals")
+# ---------- Overview ----------
+st.subheader("2. Overview")
+total = len(results)
+hot = int((results["category"] == "HOT").sum())
+warm = int((results["category"] == "WARM").sum())
+possible = int((results["category"] == "POSSIBLE").sum())
+low = int((results["category"] == "LOW").sum())
+detected = int((results["market"] != "Unknown").sum())
+potential = hot + warm
 
-display_columns = [
-    "platform", "text", "market", "intent_score", "category",
-    "signal_explanation", "url"
-]
+cols = st.columns(6)
+for col, label, value in zip(
+    cols,
+    ["Total Signals", "HOT", "WARM", "POSSIBLE", "LOW", "Potential Leads"],
+    [total, hot, warm, possible, low, potential],
+):
+    col.metric(label, value)
+
+st.caption(f"Market detected in {detected} of {total} signals.")
+
+# ---------- Score legend ----------
+st.subheader("3. Score model")
+st.markdown(
+    """
+**Maximum score = 100**
+
+- **+45** Explicit support/resistance or levels request
+- **+25** Active trading language
+- **+15** Short-term/session context
+- **+5** Direct question/request
+- **+10** Market detected
+- **−25** Possible promotional/spam language
+
+**Classification:** 🔥 HOT 90–100 · 🟠 WARM 75–89 · 🟡 POSSIBLE 60–74 · ⚪ LOW <60
+
+The score measures **public trading-intent/fit**, not probability of purchase.
+"""
+)
+
+# ---------- Results ----------
+st.subheader("4. Scored public signals")
+st.caption(f"Showing {len(filtered)} of {total} signals")
+
+display = filtered[
+    ["platform", "date", "text", "market", "intent_score", "category",
+     "matched_terms", "signal_explanation", "url"]
+].copy()
+
 st.dataframe(
-    filtered[display_columns],
+    display,
     use_container_width=True,
     hide_index=True,
     column_config={
-        "url": st.column_config.LinkColumn("URL"),
+        "url": st.column_config.LinkColumn("Source URL", display_text="Open"),
         "intent_score": st.column_config.NumberColumn("Intent Score", min_value=0, max_value=100),
     },
 )
 
+# ---------- Download ----------
 csv_bytes = filtered.to_csv(index=False).encode("utf-8")
 st.download_button(
     "Download scored CSV",
@@ -293,21 +241,14 @@ st.download_button(
     mime="text/csv",
 )
 
-with st.expander("Scoring methodology"):
-    st.markdown(
-        """
-        This MVP uses transparent heuristics:
+# ---------- Architecture ----------
+st.subheader("5. Next architecture")
+st.markdown(
+    """
+**Current:** CSV → rule-based scoring → dashboard
 
-        - Matches trading-intent terms such as support, resistance, levels, entry, target, and trading.
-        - Detects market terms across India, Crypto, US, and Forex categories.
-        - Adds points for question/request language.
-        - Adds a bonus for explicit support-and-resistance combinations.
-        - Applies a small penalty to extremely short text.
-        - Caps the final score at 100.
+**Next:** approved YouTube/Reddit public ingestion → normalized signal records → AI classifier → fit/intent scoring → dashboard → compliant content/outreach suggestions → UTM conversion tracking.
 
-        The score is an **intent/fit indicator**, not a prediction of purchase,
-        profitability, or personal financial behavior.
-        """
-    )
-
-st.caption("MVP only: no private-data access, scraping, messaging, or automated outreach.")
+No private watch history, private WhatsApp/Telegram access, prohibited scraping, or mass unsolicited messaging.
+"""
+)

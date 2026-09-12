@@ -1,6 +1,31 @@
-platform,url,text
-YouTube,https://example.com/video1,"NIFTY support for tomorrow?"
-Reddit,https://example.com/post1,"BTC next resistance?"
-YouTube,https://example.com/video2,"How do you calculate Bank Nifty levels?"
-Reddit,https://example.com/post2,"I trade stocks and want to learn more."
-X,https://example.com/post3,"What is the key level for tomorrow on gold?"
+platform,url,text,date
+YouTube,https://example.com/1,"NIFTY support for tomorrow?",2026-09-10
+Reddit,https://example.com/2,"BTC next resistance?",2026-09-10
+YouTube,https://example.com/3,"How do you calculate Bank Nifty levels?",2026-09-10
+Reddit,https://example.com/4,"I trade Bank Nifty daily. What is today's key level?",2026-09-10
+YouTube,https://example.com/5,"What are the S&P support and resistance levels today?",2026-09-10
+Reddit,https://example.com/6,"Where is BTC support right now?",2026-09-10
+YouTube,https://example.com/7,"Need NIFTY resistance for tomorrow",2026-09-10
+Reddit,https://example.com/8,"What is the next level for ETH?",2026-09-10
+YouTube,https://example.com/9,"I am looking for today's Bank Nifty support.",2026-09-11
+Reddit,https://example.com/10,"How do traders calculate support resistance?",2026-09-11
+YouTube,https://example.com/11,"Gold resistance for today?",2026-09-11
+Reddit,https://example.com/12,"EURUSD key level for tomorrow?",2026-09-11
+YouTube,https://example.com/13,"NIFTY 50 outlook for today. Any key levels?",2026-09-11
+Reddit,https://example.com/14,"I trade BTC short term. Where is the next resistance?",2026-09-11
+YouTube,https://example.com/15,"Nasdaq support today?",2026-09-11
+Reddit,https://example.com/16,"Anyone watching ETH this week?",2026-09-11
+YouTube,https://example.com/17,"Great analysis, thanks!",2026-09-11
+Reddit,https://example.com/18,"What is the market doing today?",2026-09-11
+YouTube,https://example.com/19,"Subscribe to my channel and enter the giveaway!",2026-09-12
+Reddit,https://example.com/20,"I trade stocks. Any thoughts?",2026-09-12
+YouTube,https://example.com/21,"S&P key support for today's session?",2026-09-12
+Reddit,https://example.com/22,"Where is the next NIFTY level?",2026-09-12
+YouTube,https://example.com/23,"Bank Nifty entry and target for today?",2026-09-12
+Reddit,https://example.com/24,"BTC long entry — what level should I watch?",2026-09-12
+YouTube,https://example.com/25,"XAUUSD support and resistance?",2026-09-12
+Reddit,https://example.com/26,"What are today's levels for NIFTY?",2026-09-12
+YouTube,https://example.com/27,"Just learning technical analysis.",2026-09-12
+Reddit,https://example.com/28,"Does anyone trade EURUSD?",2026-09-12
+YouTube,https://example.com/29,"Can someone give support for tomorrow's NIFTY session?",2026-09-12
+Reddit,https://example.com/30,"BTC target after breakout?",2026-09-12
