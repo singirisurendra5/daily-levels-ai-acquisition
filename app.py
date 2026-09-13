@@ -18,7 +18,7 @@ DB_PATH = ROOT / 'data' / 'daily_levels.db'
 
 st.set_page_config(page_title='Daily Levels — AI Customer Acquisition', page_icon='📈', layout='wide')
 st.title('Daily Levels — AI Customer Acquisition')
-st.caption('MVP V3.5.1 • Qualification consistency fix • Public-signal acquisition • Human-in-the-loop')
+st.caption('MVP V3.5.2 • False-positive & competition detection • Public-signal acquisition • Human-in-the-loop')
 
 store = Store(DB_PATH)
 
@@ -91,7 +91,7 @@ def requalify_stored_signals():
 
 
 def needs_requalification(df):
-    return (not df.empty and ('qualification_version' not in df.columns or df.qualification_version.fillna('legacy').astype(str).ne('3.5.1').any()))
+    return (not df.empty and ('qualification_version' not in df.columns or df.qualification_version.fillna('legacy').astype(str).ne('3.5.2').any()))
 
 
 def fetch_one(kind, item):

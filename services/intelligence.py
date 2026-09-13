@@ -240,6 +240,6 @@ def analyze(text):
         "product_fit_score": int(fit),
         "priority_score": int(priority_score),
         "competition_detected": bool(competitor or existing_levels),
-        "qualification_version": "3.5.1",
+        "qualification_version": "3.5.2",
     }
 
