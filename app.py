@@ -287,6 +287,7 @@ platform_options=['All']+sorted(live_results.platform.dropna().unique().tolist()
 market_options=['All']+sorted(live_results.market.dropna().unique().tolist()) if not live_results.empty else ['All']
 problem_options=['All']+sorted(live_results.problem.dropna().unique().tolist()) if not live_results.empty else ['All']
 evidence_options=['All']+sorted(live_results.evidence_type.dropna().unique().tolist()) if not live_results.empty and 'evidence_type' in live_results else ['All']
+evidence_type_filter=st.sidebar.selectbox('Evidence type',evidence_options)
 status_options=['All']+STATUS_OPTIONS
 platform=st.sidebar.selectbox('Platform',platform_options)
 market=st.sidebar.selectbox('Market',market_options)
