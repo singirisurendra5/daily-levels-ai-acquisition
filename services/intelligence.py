@@ -126,7 +126,7 @@ def analyze(text):
         action = "Review manually"
         solution = "Daily Levels can provide predefined daily support and resistance levels from the opening price."
     elif daily_levels_fit >= 50:
-        action = "Create relevant content"
+        action = "Reply with educational information"
         solution = "Create educational content showing how Daily Levels addresses this trading-level problem."
     elif category in {"HOT", "WARM"}:
         action = "Invite to learn more"

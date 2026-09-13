@@ -1,28 +1,30 @@
 # Daily Levels — AI Customer Acquisition
 
-## MVP V3.2
-This version continues the existing MVP V2/V3.1 workflow and adds:
-- Live public RSS/Atom, Reddit public-feed, and YouTube public-feed ingestion
-- In-app Source Manager
-- Live / uploaded / demo dataset modes
-- Persistent SQLite signal store
-- Source-run history and health
-- Duplicate-safe opportunity persistence
-- Human review status tracking
-- Conversion event tracking (content → visit → signup → purchase)
-- CSV exports
+MVP V3.3: live public-signal acquisition with persistent local workflow and human-in-the-loop review.
 
-### Run
+## Run
+
 ```bash
 python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-### Public source configuration
-Sources can be added from the **Source Manager** in the app. Only use public feeds you are permitted to access. No automated messages are sent.
+## V3.3 workflow
 
-### Important deployment note
-SQLite is included for a simple single-instance workflow. For durable multi-instance production storage, move the `Store` layer to a managed database such as Postgres/Supabase and keep the same schema/API. Streamlit Community Cloud should be treated as the UI layer rather than a guaranteed durable database filesystem.
+Public RSS/Atom, public Reddit RSS and public YouTube channel feeds → normalization → duplicate detection → V2 intent/market intelligence → Daily Levels fit → opportunity queue → human review → conversion events.
 
-### Workflow
-Public source → Fetch → Normalize → Deduplicate → Intent + market detection → Daily Levels fit → Priority → Human review → Content/educational action → Website visit → Signup → Purchase → Analytics.
+The app does not access private data, bypass access controls, or automatically message users.
+
+## First run
+
+1. Open **Source Manager**.
+2. Click **Load recommended public RSS sources**.
+3. Click **Fetch live signals now**.
+4. Use the filters and opportunity queue to review results.
+5. Record human-reviewed actions and conversion events when appropriate.
+
+Recommended sources are public RSS search feeds and are provided as a starting point. Verify that each source is permitted for your intended use and follow its terms and platform policies.
+
+## Storage
+
+Signals, source runs, and conversion events are stored in `data/daily_levels.db`. On hosted environments, local filesystem persistence depends on the hosting provider's storage model; for durable production persistence, move the storage layer to a managed database in a later release.
