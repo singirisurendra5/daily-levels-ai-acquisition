@@ -23,23 +23,32 @@ class Store:
   with self._conn() as con:
    con.executescript(SCHEMA)
    existing={r[1] for r in con.execute('PRAGMA table_info(signals)')}
-   additions={'daily_levels_solution':'TEXT','matched_terms':'TEXT','signal_explanation':'TEXT','spam_probability':'REAL DEFAULT 0','confidence':'REAL DEFAULT 0','signal_type':"TEXT DEFAULT 'User-intent signal'",'explicit_need':'INTEGER DEFAULT 0','quality_flags':'TEXT','relevance_score':'INTEGER DEFAULT 0','buying_intent_score':'INTEGER DEFAULT 0','product_fit_score':'INTEGER DEFAULT 0','priority_score':'INTEGER DEFAULT 0','competition_detected':'INTEGER DEFAULT 0'}
+   additions={'daily_levels_solution':'TEXT','matched_terms':'TEXT','signal_explanation':'TEXT','spam_probability':'REAL DEFAULT 0','confidence':'REAL DEFAULT 0','signal_type':"TEXT DEFAULT 'User-intent signal'",'explicit_need':'INTEGER DEFAULT 0','quality_flags':'TEXT','relevance_score':'INTEGER DEFAULT 0','buying_intent_score':'INTEGER DEFAULT 0','product_fit_score':'INTEGER DEFAULT 0','priority_score':'INTEGER DEFAULT 0','competition_detected':'INTEGER DEFAULT 0','qualification_version':"TEXT DEFAULT 'legacy'"}
    for col,typ in additions.items():
     if col not in existing: con.execute(f'ALTER TABLE signals ADD COLUMN {col} {typ}')
  def upsert_signals(self,df):
   if df.empty:return 0
   now=datetime.now(timezone.utc).isoformat(); new=0
-  cols=['platform','url','text','date','source','ingested_at','intent_score','customer_fit_score','category','market','problem','daily_levels_solution','recommended_action','matched_terms','signal_explanation','spam_probability','confidence','signal_type','explicit_need','quality_flags','relevance_score','buying_intent_score','product_fit_score','priority_score','competition_detected']
+  cols=['platform','url','text','date','source','ingested_at','intent_score','customer_fit_score','category','market','problem','daily_levels_solution','recommended_action','matched_terms','signal_explanation','spam_probability','confidence','signal_type','explicit_need','quality_flags','relevance_score','buying_intent_score','product_fit_score','priority_score','competition_detected','qualification_version']
+  def safe_text(v):
+   return '' if pd.isna(v) else str(v)
+  def safe_float(v,default=0):
+   try:
+    return default if pd.isna(v) else float(v)
+   except Exception:return default
   with self._conn() as con:
    for _,r in df.iterrows():
-    sid=str(r.get('signal_id','')).strip()
+    sid=safe_text(r.get('signal_id','')).strip()
     if not sid: continue
-    vals=[str(r.get(c,'')) for c in cols]
-    for i,c in enumerate(['intent_score','customer_fit_score']): vals[cols.index(c)]=int(float(r.get(c,0)))
-    vals[cols.index('spam_probability')]=float(r.get('spam_probability',0)); vals[cols.index('confidence')]=float(r.get('confidence',0)); vals[cols.index('explicit_need')]=int(bool(r.get('explicit_need',False)))
-    for c in ['relevance_score','buying_intent_score','product_fit_score','priority_score']:
-     vals[cols.index(c)] = int(float(r.get(c,0)))
-    vals[cols.index('competition_detected')] = int(bool(r.get('competition_detected',False)))
+    vals=[safe_text(r.get(c,'')) for c in cols]
+    for c in ['intent_score','customer_fit_score','relevance_score','buying_intent_score','product_fit_score','priority_score']:
+     vals[cols.index(c)]=int(safe_float(r.get(c,0)))
+    vals[cols.index('spam_probability')]=safe_float(r.get('spam_probability',0))
+    vals[cols.index('confidence')]=safe_float(r.get('confidence',0))
+    vals[cols.index('explicit_need')]=int(bool(r.get('explicit_need',False)))
+    vals[cols.index('competition_detected')]=int(bool(r.get('competition_detected',False)))
+    vals[cols.index('quality_flags')] = safe_text(r.get('quality_flags',''))
+    vals[cols.index('qualification_version')] = safe_text(r.get('qualification_version','3.5.1')) or '3.5.1'
     exists=con.execute('SELECT 1 FROM signals WHERE signal_id=?',(sid,)).fetchone()
     if exists:
      sets=','.join(f'{c}=?' for c in cols)
@@ -49,7 +58,7 @@ class Store:
      con.execute(f'INSERT INTO signals({",".join(names)}) VALUES({placeholders})',vals+['New',now,now,sid]); new+=1
   return new
  def signals(self):
-  with self._conn() as con:return pd.read_sql_query('SELECT * FROM signals ORDER BY customer_fit_score DESC,intent_score DESC,first_seen_at DESC',con)
+  with self._conn() as con:return pd.read_sql_query('SELECT * FROM signals ORDER BY priority_score DESC,buying_intent_score DESC,product_fit_score DESC,first_seen_at DESC',con)
  def update_status(self,sid,status):
   with self._conn() as con:con.execute('UPDATE signals SET status=? WHERE signal_id=?',(status,sid))
  def log_run(self,source_type,source_name,rows,new_rows=0,error=''):

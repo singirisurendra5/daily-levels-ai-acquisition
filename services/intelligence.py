@@ -76,11 +76,23 @@ def analyze(text):
     spam = found_any(text, SPAM_RULES)
     competitor = found_any(text, COMPETITOR_RULES)
 
+    recap_markers = [
+        r"\bhere(?:'s| is) (?:my|the) levels?\b",
+        r"\blevels? (?:for|at)\s+\d",
+        r"\bmy trade recap\b",
+        r"\btrade recap\b",
+        r"\bmarket recap\b",
+    ]
+    recap = found_any(text, recap_markers) and not explicit
+
+    # Generic/automated content that merely mentions levels is not treated as a
+    # concrete Daily Levels problem unless there is a clear user need.
     problem = "No clear Daily Levels problem detected"
-    for label, patterns in PROBLEM_RULES:
-        if found_any(text, patterns):
-            problem = label
-            break
+    if not (generic or automated) or explicit:
+        for label, patterns in PROBLEM_RULES:
+            if found_any(text, patterns):
+                problem = label
+                break
 
     # Relevance: does this signal contain a problem Daily Levels can reasonably solve?
     relevance = 0
@@ -91,44 +103,51 @@ def analyze(text):
     if generic or automated: relevance -= 30
     if spam: relevance -= 35
     if competitor: relevance -= 10
+    if recap and not explicit: relevance -= 10
     relevance = max(0, min(100, relevance))
 
-    # Buying intent: is the person actively looking for an answer/solution?
+    # Buying intent: actively looking for a solution, not merely discussing trades.
     buying = 0
     if explicit: buying += 45
-    if direct: buying += 20
+    if direct and not (generic or automated): buying += 20
     if short_term: buying += 10
     if trading_action: buying += 10
     if market_hits: buying += 10
-    if competitor: buying -= 20
+    if competitor: buying -= 30
     if generic: buying -= 25
     if automated: buying -= 35
     if spam: buying -= 40
-    # A recap that merely states existing levels is not a request.
-    recap_markers = [r"\bhere(?:'s| is) (?:my|the) levels?\b", r"\blevels? (?:for|at)\s+\d", r"\bmy trade recap\b", r"\btrade recap\b"]
-    if found_any(text, recap_markers) and not explicit:
-        buying -= 20
+    if recap: buying -= 25
     buying = max(0, min(100, buying))
 
-    # Product fit: how directly Daily Levels addresses the detected problem.
+    # Product fit: high only when the actual problem maps to Daily Levels.
     fit = 0
-    if problem != "No clear Daily Levels problem detected": fit += 45
-    if market_hits: fit += 30
+    if problem == "Needs predefined support/resistance levels": fit += 50
+    elif problem == "Needs a trading entry/target reference": fit += 30
+    elif problem == "Needs short-term/session planning": fit += 25
+    if market_hits: fit += 25
     if explicit: fit += 15
     if short_term: fit += 10
-    if competitor: fit -= 15
+    if competitor: fit -= 20
     if generic or automated: fit -= 30
     if spam: fit -= 40
+    if problem == "No clear Daily Levels problem detected": fit = 0
     fit = max(0, min(100, fit))
 
-    # Priority intentionally requires multiple dimensions. Relevance alone cannot create HOT.
+    # Priority is strictly derived from the three displayed qualification scores.
     priority_score = round((0.40 * buying) + (0.30 * relevance) + (0.30 * fit))
+    # Hard gates: no explicit need, weak buying intent, weak relevance/fit, or
+    # generic/automated/recap content cannot become a HOT opportunity.
     if buying < 40 or relevance < 45 or fit < 45:
         priority_score = min(priority_score, 74)
     if buying < 25 or relevance < 30:
         priority_score = min(priority_score, 59)
+    if not explicit or generic or automated or recap or spam:
+        priority_score = min(priority_score, 74)
     if spam or automated:
         priority_score = min(priority_score, 24)
+    if competitor and buying < 60:
+        priority_score = min(priority_score, 59)
 
     if priority_score >= 90:
         category = "HOT"
@@ -139,13 +158,13 @@ def analyze(text):
     else:
         category = "LOW"
 
-    if spam or priority_score < 25:
+    if spam or automated or priority_score < 25:
         action = "Do not contact"
     elif competitor and buying >= 60:
         action = "Review manually"
-    elif buying >= 70 and fit >= 75:
+    elif buying >= 70 and fit >= 75 and explicit:
         action = "Review manually"
-    elif relevance >= 60 and buying >= 45:
+    elif relevance >= 60 and buying >= 45 and explicit:
         action = "Reply with educational information"
     elif relevance >= 55:
         action = "Create relevant content"
@@ -164,21 +183,22 @@ def analyze(text):
     if direct: reasons.append("Direct question/request")
     if market_hits: reasons.append("Supported market detected")
     if competitor: reasons.append("Alternative level source detected")
-    flags=[]
+    flags = []
     if generic: flags.append("Generic discussion/educational content")
     if automated: flags.append("Automated/moderator content")
+    if recap: flags.append("Trade/market recap without explicit request")
     if competitor: flags.append("Existing alternative/competitor source")
     if spam: flags.append("Promotional/spam indicators")
     if not direct and not explicit: flags.append("No explicit user request")
 
     signal_type = "Automated/moderator" if automated else ("Generic discussion" if generic else "User-intent signal")
     confidence = 0.45 + (0.15 if market_hits else 0) + (0.15 if problem != "No clear Daily Levels problem detected" else 0) + (0.15 if explicit else 0)
-    if generic or automated: confidence -= 0.20
+    if generic or automated or recap: confidence -= 0.20
     confidence = max(0.25, min(0.95, confidence))
 
     matched = []
     if explicit: matched.append("levels request")
-    if action: matched.append("trade/action")
+    if trading_action: matched.append("trade/action")
     if short_term: matched.append("short-term")
     if direct: matched.append("question/request")
     if competitor: matched.append("alternative source")
@@ -199,11 +219,13 @@ def analyze(text):
         "spam_probability": round(0.8 if spam else (0.35 if automated else (0.20 if generic else 0.03)), 2),
         "confidence": round(confidence, 2),
         "signal_type": signal_type,
-        "explicit_need": bool(explicit or direct),
+        "explicit_need": bool(explicit),
         "quality_flags": "; ".join(flags),
         "relevance_score": int(relevance),
         "buying_intent_score": int(buying),
         "product_fit_score": int(fit),
         "priority_score": int(priority_score),
         "competition_detected": bool(competitor),
+        "qualification_version": "3.5.1",
     }
+

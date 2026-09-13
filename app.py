@@ -18,24 +18,12 @@ DB_PATH = ROOT / 'data' / 'daily_levels.db'
 
 st.set_page_config(page_title='Daily Levels — AI Customer Acquisition', page_icon='📈', layout='wide')
 st.title('Daily Levels — AI Customer Acquisition')
-st.caption('MVP V3.5 • Lead qualification engine • Public-signal acquisition • Human-in-the-loop')
+st.caption('MVP V3.5.1 • Qualification consistency fix • Public-signal acquisition • Human-in-the-loop')
 
 store = Store(DB_PATH)
 
 STATUS_OPTIONS = ['New','Reviewed','Content planned','Educational reply','Invited to learn','Converted','Do not contact']
 EVENT_OPTIONS = ['Content published','Educational reply','Website visit','Signup','Trial/start','Purchase']
-
-if st.sidebar.button('Re-qualify stored signals'):
-    existing = store.signals()
-    if existing.empty:
-        st.sidebar.info('No stored signals to re-qualify.')
-    else:
-        refreshed = score_frame(existing[['platform','url','text','date','source','ingested_at']].copy())
-        refreshed['status'] = existing.set_index('signal_id').reindex(refreshed.signal_id).status.fillna('New').to_numpy() if 'status' in existing else 'New'
-        store.upsert_signals(refreshed)
-        st.sidebar.success(f'Re-qualified {len(refreshed)} stored signals.')
-        st.rerun()
-
 
 def clean(x):
     return '' if pd.isna(x) else str(x).strip()
@@ -91,6 +79,21 @@ def score_frame(raw):
     return result
 
 
+def requalify_stored_signals():
+    existing = store.signals()
+    if existing.empty:
+        return 0
+    base_cols = ['platform','url','text','date','source','ingested_at']
+    refreshed = score_frame(existing[[c for c in base_cols if c in existing.columns]].copy())
+    status_map = existing.set_index('signal_id')['status'].to_dict() if 'status' in existing.columns else {}
+    refreshed['status'] = refreshed['signal_id'].map(status_map).fillna('New')
+    return store.upsert_signals(refreshed)
+
+
+def needs_requalification(df):
+    return (not df.empty and ('qualification_version' not in df.columns or df.qualification_version.fillna('legacy').astype(str).ne('3.5.1').any()))
+
+
 def fetch_one(kind, item):
     if kind == 'rss':
         return fetch_rss(item['url'], item.get('platform','RSS'))
@@ -143,6 +146,14 @@ def run_configured_sources(cfg):
 cfg = load_json(SOURCES_PATH, {'rss_feeds':[], 'reddit':[], 'youtube_channels':[]})
 recommended = load_json(RECOMMENDED_PATH, {'rss_feeds':[], 'reddit':[], 'youtube_channels':[]})
 
+# One-time migration: existing V3.5/older rows may still contain legacy HOT labels
+# while the new qualification columns are zero/default. Re-score every stored row
+# so the dashboard, queue, and detail view all use the same qualification engine.
+existing_now = store.signals()
+if needs_requalification(existing_now):
+    requalify_stored_signals()
+    existing_now = store.signals()
+
 # On a fresh deployment, keep the app immediately usable: seed the recommended
 # public sources in memory. The user still explicitly starts fetching.
 if not any(cfg.get(k, []) for k in ['rss_feeds', 'reddit', 'youtube_channels']):
@@ -151,6 +162,12 @@ if not any(cfg.get(k, []) for k in ['rss_feeds', 'reddit', 'youtube_channels']):
         for item in cfg[k]:
             item['enabled'] = True
     save_sources(cfg)
+
+st.sidebar.header('Qualification')
+if st.sidebar.button('Re-qualify all stored signals'):
+    count = requalify_stored_signals()
+    st.sidebar.success(f'Re-qualified {count} stored signals.')
+    st.rerun()
 
 with st.expander('⚙️ Source Manager', expanded=True):
     st.caption('Only add public sources you are permitted to access. The app does not message users or access private data.')
@@ -284,19 +301,20 @@ if not filtered.empty:
     if market!='All': filtered=filtered[filtered.market.str.contains(re.escape(market),case=False,na=False)]
     if problem!='All': filtered=filtered[filtered.problem==problem]
     if status!='All': filtered=filtered[filtered.status==status]
-    filtered=filtered[(filtered.intent_score>=min_score)&(filtered.customer_fit_score>=min_fit)]
+    filtered=filtered[(filtered.priority_score>=min_score)&(filtered.product_fit_score>=min_fit)]
     if keyword.strip(): filtered=filtered[filtered.text.str.contains(re.escape(keyword.strip()),case=False,na=False)]
-    filtered=filtered.sort_values(['customer_fit_score','intent_score'],ascending=False)
+    filtered=filtered.sort_values(['priority_score','buying_intent_score','product_fit_score'],ascending=False)
 
 st.subheader('3. Acquisition dashboard')
-vals=[len(filtered),int((filtered.category=='HOT').sum()),int((filtered.category=='WARM').sum()),int((filtered.category=='POSSIBLE').sum()),int((filtered.category=='LOW').sum()),int((filtered.customer_fit_score>=80).sum()),int((filtered.buying_intent_score>=70).sum()) if 'buying_intent_score' in filtered else 0]
+vals=[len(filtered),int((filtered.category=='HOT').sum()),int((filtered.category=='WARM').sum()),int((filtered.category=='POSSIBLE').sum()),int((filtered.category=='LOW').sum()),int((filtered.product_fit_score>=75).sum()),int((filtered.buying_intent_score>=70).sum()) if 'buying_intent_score' in filtered else 0]
 cols=st.columns(7)
 for c,l,v in zip(cols,['Signals','HOT','WARM','POSSIBLE','LOW','High-fit','High-intent'],vals): c.metric(l,v)
 if not filtered.empty:
     a,b,c=st.columns(3)
-    a.write('**Top platforms**'); a.dataframe(filtered.platform.value_counts().head(5).rename('signals'),use_container_width=True)
-    b.write('**Top markets**'); b.dataframe(filtered.market.value_counts().head(5).rename('signals'),use_container_width=True)
-    c.write('**Top problems**'); c.dataframe(filtered.problem.value_counts().head(5).rename('signals'),use_container_width=True)
+    for box, title, counts in [(a,'Top platforms',filtered.platform.value_counts().head(5)),(b,'Top markets',filtered.market.value_counts().head(5)),(c,'Top problems',filtered.problem.value_counts().head(5))]:
+        box.write(f'**{title}**')
+        for label, count in counts.items():
+            box.write(f'{label} — **{int(count)}**')
 else:
     st.info('No opportunities match the current filters. Add a source and fetch live signals, or select Demo mode to preview the workflow.')
 
@@ -317,17 +335,20 @@ st.subheader('5. Human review + action tracking')
 if not filtered.empty:
     selected = st.selectbox('Select opportunity', filtered.signal_id.tolist(), format_func=lambda x: f"{x} — {filtered.loc[filtered.signal_id==x,'category'].iloc[0]} — {filtered.loc[filtered.signal_id==x,'text'].iloc[0][:90]}")
     row = filtered[filtered.signal_id==selected].iloc[0]
-    a,b,c,d,e=st.columns(5); a.metric('Relevance',int(row.get('relevance_score',0))); b.metric('Buying intent',int(row.get('buying_intent_score',0))); c.metric('Product fit',int(row.get('product_fit_score',row.get('customer_fit_score',0)))); d.metric('Priority',row.category); e.metric('Confidence',f"{float(row.get('confidence',0.5)):.0%}")
+    a,b,c,d,e=st.columns(5); a.metric('Relevance',int(row.get('relevance_score',0) or 0)); b.metric('Buying intent',int(row.get('buying_intent_score',0) or 0)); c.metric('Product fit',int(row.get('product_fit_score',0) or 0)); d.metric('Priority',f"{int(row.get('priority_score',0) or 0)} — {row.category}"); e.metric('Confidence',f"{float(row.get('confidence',0.5) or 0.5):.0%}")
     st.write(f"**Problem:** {row.problem}")
     st.write(f"**Suggested Daily Levels solution:** {row.daily_levels_solution}")
     st.write(f"**Recommended action:** {row.recommended_action}")
     st.caption('Priority is a qualification score combining relevance, buying intent, and product fit; it is not proof of purchase intent.')
-    st.write(f"**Signal type:** {row.get('signal_type','User-intent signal')} • **Explicit need:** {'Yes' if bool(row.get('explicit_need',False)) else 'No'} • **Competition detected:** {'Yes' if bool(row.get('competition_detected',False)) else 'No'}")
-    if str(row.get('quality_flags','')).strip(): st.warning(f"Quality flags: {row.get('quality_flags')}")
+    explicit_need = bool(row.get('explicit_need',False)) and not pd.isna(row.get('explicit_need',False))
+    competition = bool(row.get('competition_detected',False)) and not pd.isna(row.get('competition_detected',False))
+    st.write(f"**Signal type:** {clean(row.get('signal_type','User-intent signal')) or 'User-intent signal'} • **Explicit need:** {'Yes' if explicit_need else 'No'} • **Competition detected:** {'Yes' if competition else 'No'}")
+    quality_flags = clean(row.get('quality_flags',''))
+    if quality_flags and quality_flags.lower() != 'nan': st.warning(f"Quality flags: {quality_flags}")
     st.write(f"**Signal:** {row.text}")
     st.write(f"**Source:** {row.url}")
     x,y=st.columns(2)
-    current_status = row.status if row.status in STATUS_OPTIONS else 'New'
+    current_status = clean(row.get('status','New')) if clean(row.get('status','New')) in STATUS_OPTIONS else 'New'
     new_status=x.selectbox('Review status',STATUS_OPTIONS,index=STATUS_OPTIONS.index(current_status))
     if x.button('Save review status'): store.update_status(selected,new_status); st.rerun()
     event=y.selectbox('Record conversion event',EVENT_OPTIONS)
@@ -371,4 +392,4 @@ if not conv.empty:
     st.download_button('Download conversion events CSV',conv.to_csv(index=False).encode('utf-8'),'daily_levels_conversion_events.csv','text/csv')
 
 st.subheader('10. Complete acquisition workflow')
-st.markdown('''**Public source → Fetch → Normalize → Deduplicate → Relevance → Buying intent → Product fit → Priority → HOT/WARM/POSSIBLE/LOW → Opportunity queue → Human review → Content/educational action → Website visit → Signup → Purchase → Conversion analytics**\n\nNo private data, automated outreach, scraping behind access controls, or bypassing platform restrictions.''')
+st.markdown('''**Public source → Fetch → Normalize → Deduplicate → Relevance → Buying intent → Product fit → Priority (hard gates) → HOT/WARM/POSSIBLE/LOW → Opportunity queue → Human review → Content/educational action → Website visit → Signup → Purchase → Conversion analytics**\n\nNo private data, automated outreach, scraping behind access controls, or bypassing platform restrictions.''')
