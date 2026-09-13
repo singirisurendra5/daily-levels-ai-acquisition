@@ -165,16 +165,28 @@ else:
 st.subheader('⚙️ Public source manager')
 cfg=load_json(SOURCES_PATH,{})
 rec=load_json(RECOMMENDED_PATH,{})
+
+# V4 should work automatically out of the box. If the user has not configured
+# any sources yet, seed the recommended public feeds once. This does not send
+# messages or access private data; it only enables the permitted public feeds.
+if not configured_sources(cfg) and configured_sources(rec):
+    cfg=rec
+    save_sources(cfg)
+    st.caption('Recommended public sources are enabled automatically for discovery.')
+
 col1,col2=st.columns(2)
 with col1:
     st.write('Enabled sources')
     rows=[]
-    for kind,item in configured_sources(cfg): rows.append({'type':kind,'source':source_label(kind,item),'enabled':True})
-    st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True) if rows else st.info('No enabled sources.')
+    for kind,item in configured_sources(cfg):
+        rows.append({'type':kind,'source':source_label(kind,item),'enabled':True})
+    if rows:
+        st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
+    else:
+        st.info('No enabled sources.')
 with col2:
     if st.button('Load recommended public sources'):
         merged=load_json(RECOMMENDED_PATH,{})
-        # Preserve user additions, while enabling the recommended public feeds.
         cfg=merged
         save_sources(cfg)
         st.success('Recommended public sources loaded. Click Scan public sources now.')
