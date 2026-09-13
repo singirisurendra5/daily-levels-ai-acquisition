@@ -18,12 +18,23 @@ DB_PATH = ROOT / 'data' / 'daily_levels.db'
 
 st.set_page_config(page_title='Daily Levels — AI Customer Acquisition', page_icon='📈', layout='wide')
 st.title('Daily Levels — AI Customer Acquisition')
-st.caption('MVP V3.3.1 • Live public-signal acquisition • Persistent opportunity workflow • Human-in-the-loop')
+st.caption('MVP V3.5 • Lead qualification engine • Public-signal acquisition • Human-in-the-loop')
 
 store = Store(DB_PATH)
 
 STATUS_OPTIONS = ['New','Reviewed','Content planned','Educational reply','Invited to learn','Converted','Do not contact']
 EVENT_OPTIONS = ['Content published','Educational reply','Website visit','Signup','Trial/start','Purchase']
+
+if st.sidebar.button('Re-qualify stored signals'):
+    existing = store.signals()
+    if existing.empty:
+        st.sidebar.info('No stored signals to re-qualify.')
+    else:
+        refreshed = score_frame(existing[['platform','url','text','date','source','ingested_at']].copy())
+        refreshed['status'] = existing.set_index('signal_id').reindex(refreshed.signal_id).status.fillna('New').to_numpy() if 'status' in existing else 'New'
+        store.upsert_signals(refreshed)
+        st.sidebar.success(f'Re-qualified {len(refreshed)} stored signals.')
+        st.rerun()
 
 
 def clean(x):
@@ -278,9 +289,9 @@ if not filtered.empty:
     filtered=filtered.sort_values(['customer_fit_score','intent_score'],ascending=False)
 
 st.subheader('3. Acquisition dashboard')
-vals=[len(filtered),int((filtered.category=='HOT').sum()),int((filtered.category=='WARM').sum()),int((filtered.category=='POSSIBLE').sum()),int((filtered.category=='LOW').sum()),int((filtered.customer_fit_score>=80).sum())]
-cols=st.columns(6)
-for c,l,v in zip(cols,['Signals','HOT','WARM','POSSIBLE','LOW','High-fit'],vals): c.metric(l,v)
+vals=[len(filtered),int((filtered.category=='HOT').sum()),int((filtered.category=='WARM').sum()),int((filtered.category=='POSSIBLE').sum()),int((filtered.category=='LOW').sum()),int((filtered.customer_fit_score>=80).sum()),int((filtered.buying_intent_score>=70).sum()) if 'buying_intent_score' in filtered else 0]
+cols=st.columns(7)
+for c,l,v in zip(cols,['Signals','HOT','WARM','POSSIBLE','LOW','High-fit','High-intent'],vals): c.metric(l,v)
 if not filtered.empty:
     a,b,c=st.columns(3)
     a.write('**Top platforms**'); a.dataframe(filtered.platform.value_counts().head(5).rename('signals'),use_container_width=True)
@@ -291,7 +302,7 @@ else:
 
 st.subheader('4. Opportunity queue')
 st.caption(f'Showing {len(filtered)} opportunities • User-intent: {int((filtered.get("signal_type", pd.Series(dtype=str))=="User-intent signal").sum()) if not filtered.empty else 0}')
-queue_cols=['platform','text','market','intent_score','customer_fit_score','category','signal_type','explicit_need','problem','recommended_action','status','url']
+queue_cols=['platform','text','market','relevance_score','buying_intent_score','product_fit_score','priority_score','category','competition_detected','problem','recommended_action','status','url']
 if filtered.empty:
     st.info('Opportunity queue is empty.')
 else:
@@ -306,11 +317,12 @@ st.subheader('5. Human review + action tracking')
 if not filtered.empty:
     selected = st.selectbox('Select opportunity', filtered.signal_id.tolist(), format_func=lambda x: f"{x} — {filtered.loc[filtered.signal_id==x,'category'].iloc[0]} — {filtered.loc[filtered.signal_id==x,'text'].iloc[0][:90]}")
     row = filtered[filtered.signal_id==selected].iloc[0]
-    a,b,c,d=st.columns(4); a.metric('Intent',int(row.intent_score)); b.metric('Fit',int(row.customer_fit_score)); c.metric('Priority',row.category); d.metric('Confidence',f"{float(row.get('confidence',0.5)):.0%}")
+    a,b,c,d,e=st.columns(5); a.metric('Relevance',int(row.get('relevance_score',0))); b.metric('Buying intent',int(row.get('buying_intent_score',0))); c.metric('Product fit',int(row.get('product_fit_score',row.get('customer_fit_score',0)))); d.metric('Priority',row.category); e.metric('Confidence',f"{float(row.get('confidence',0.5)):.0%}")
     st.write(f"**Problem:** {row.problem}")
     st.write(f"**Suggested Daily Levels solution:** {row.daily_levels_solution}")
     st.write(f"**Recommended action:** {row.recommended_action}")
-    st.write(f"**Signal type:** {row.get('signal_type','User-intent signal')} • **Explicit need:** {'Yes' if bool(row.get('explicit_need',False)) else 'No'}")
+    st.caption('Priority is a qualification score combining relevance, buying intent, and product fit; it is not proof of purchase intent.')
+    st.write(f"**Signal type:** {row.get('signal_type','User-intent signal')} • **Explicit need:** {'Yes' if bool(row.get('explicit_need',False)) else 'No'} • **Competition detected:** {'Yes' if bool(row.get('competition_detected',False)) else 'No'}")
     if str(row.get('quality_flags','')).strip(): st.warning(f"Quality flags: {row.get('quality_flags')}")
     st.write(f"**Signal:** {row.text}")
     st.write(f"**Source:** {row.url}")
@@ -333,7 +345,19 @@ else:
     m[0].metric('Events',len(conv)); m[1].metric('Website visits',int((conv.event=='Website visit').sum())); m[2].metric('Signups',int((conv.event=='Signup').sum())); m[3].metric('Trials',int((conv.event=='Trial/start').sum())); m[4].metric('Purchases',int((conv.event=='Purchase').sum()))
     st.dataframe(conv,use_container_width=True,hide_index=True)
 
-st.subheader('7. Source health')
+st.subheader('7. Qualification intelligence')
+if not filtered.empty and 'buying_intent_score' in filtered:
+    q1,q2,q3,q4=st.columns(4)
+    q1.metric('Relevant (45+)', int((filtered.relevance_score>=45).sum()))
+    q2.metric('High intent (70+)', int((filtered.buying_intent_score>=70).sum()))
+    q3.metric('High fit (75+)', int((filtered.product_fit_score>=75).sum()))
+    q4.metric('Alternative source detected', int(filtered.competition_detected.sum()))
+    st.write('**Target funnel:** Raw signals → Relevant → High-intent → High-fit → true HOT opportunities.')
+    st.dataframe(filtered.groupby('market').agg(signals=('signal_id','count'), relevant=('relevance_score',lambda s:int((s>=45).sum())), high_intent=('buying_intent_score',lambda s:int((s>=70).sum())), high_fit=('product_fit_score',lambda s:int((s>=75).sum()))).reset_index().sort_values(['high_intent','high_fit'],ascending=False),use_container_width=True,hide_index=True)
+else:
+    st.info('Qualification metrics will appear after signals are loaded.')
+
+st.subheader('8. Source health')
 if runs.empty:
     st.info('No source runs yet. Load recommended sources or add a permitted public source, then click Fetch live signals now.')
 else:
@@ -341,10 +365,10 @@ else:
     health['status'] = health.error.fillna('').map(lambda x: 'ERROR' if str(x).strip() else 'OK')
     st.dataframe(health[['run_at','source_type','source_name','rows_fetched','new_rows','status','error']],use_container_width=True,hide_index=True)
 
-st.subheader('8. Export')
+st.subheader('9. Export')
 st.download_button('Download opportunities CSV',live_results.to_csv(index=False).encode('utf-8'),'daily_levels_opportunities.csv','text/csv')
 if not conv.empty:
     st.download_button('Download conversion events CSV',conv.to_csv(index=False).encode('utf-8'),'daily_levels_conversion_events.csv','text/csv')
 
-st.subheader('9. Complete acquisition workflow')
-st.markdown('''**Public source → Fetch → Normalize → Deduplicate → Intent + market detection → Daily Levels fit → HOT/WARM/POSSIBLE/LOW → Opportunity queue → Human review → Content/educational action → Website visit → Signup → Purchase → Conversion analytics**\n\nNo private data, automated outreach, scraping behind access controls, or bypassing platform restrictions.''')
+st.subheader('10. Complete acquisition workflow')
+st.markdown('''**Public source → Fetch → Normalize → Deduplicate → Relevance → Buying intent → Product fit → Priority → HOT/WARM/POSSIBLE/LOW → Opportunity queue → Human review → Content/educational action → Website visit → Signup → Purchase → Conversion analytics**\n\nNo private data, automated outreach, scraping behind access controls, or bypassing platform restrictions.''')

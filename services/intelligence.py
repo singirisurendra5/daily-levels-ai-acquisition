@@ -21,26 +21,30 @@ MARKETS = {
 }
 SUPPORTED_MARKETS = set(MARKETS)
 
-INTENT_RULES = [
-    ("Explicit levels request", 45, [r"\bsupport\s*(?:and|&|/)\s*resistance\b", r"\b(?:support|resistance)\s+(?:level|levels)\b", r"\b(?:key|important|major|next)\s+levels?\b", r"\b(?:give|share|show|tell|need|looking for|what are|where are)\b.{0,80}\blevels?\b"]),
-    ("Trading action language", 20, [r"\b(?:enter|entry|buy|sell|long|short|target|stop[- ]?loss|position|trade|trading)\b"]),
-    ("Short-term context", 10, [r"\b(?:today|tomorrow|intraday|day trade|next session|next trading day)\b"]),
-    ("Direct question/request", 10, [r"\?", r"\b(?:can someone|anyone know|please|help me|how do i|where can i|what should i)\b"]),
+# V3.5 separates three concepts: relevance, buying intent, and product fit.
+# This prevents a trader recap that mentions levels from looking like a buyer.
+EXPLICIT_REQUEST = [
+    r"\b(?:where|what are|what's|whats|need|looking for|give me|share|show me|tell me)\b.{0,100}\b(?:support|resistance|levels?)\b",
+    r"\b(?:support|resistance)\s+(?:and|&|/)\s+(?:resistance|support)\b",
+    r"\b(?:support|resistance)\s+(?:level|levels)\b.{0,80}\?",
+    r"\bkey\s+levels?\b.{0,80}\?",
 ]
-SPAM_RULES = [
-    ("Promotional/spam language", -30, [r"\bgiveaway\b", r"\bpromo code\b", r"\bairdrop\b", r"\bfree money\b", r"\bcasino\b", r"\bbetting\b", r"\bsubscribe\s+to\s+my\s+channel\b", r"\baffiliate\b"]),
+TRADING_ACTION = [r"\b(?:enter|entry|buy|sell|long|short|target|stop[- ]?loss|position|trade|trading)\b"]
+SHORT_TERM = [r"\b(?:today|tomorrow|intraday|day trade|next session|next trading day|opening|market open)\b"]
+DIRECT_REQUEST = [r"\?", r"\b(?:can someone|anyone know|please|help me|how do i|where can i|what should i|need|looking for|want|give me|share|show me|tell me)\b"]
+GENERIC_MARKERS = [r"\bdaily discussion\b", r"\bdaily thread\b", r"\bweekly discussion\b", r"\bmegathread\b", r"\btechnical analysis (?:guide|intro|introduction)\b", r"\bwhat is technical analysis\b", r"\bmarket news\b", r"\bfor educational purposes\b"]
+AUTOMATED_MARKERS = [r"\bautomoderator\b", r"\bmod(erator)?\b", r"\bthis is the daily discussion\b", r"\bposted automatically\b", r"\bweekly thread\b"]
+SPAM_RULES = [r"\bgiveaway\b", r"\bpromo code\b", r"\bairdrop\b", r"\bfree money\b", r"\bcasino\b", r"\bbetting\b", r"\bsubscribe\s+to\s+my\s+channel\b", r"\baffiliate\b"]
+COMPETITOR_RULES = [
+    r"\bsource\s+(?:for|of)\s+(?:the\s+)?levels?\s*[:=-]\s*[^\n]{2,80}",
+    r"\b(?:using|use|from)\s+(?:gammawalls|tradingview|investing\.com|zerodha|upstox|sensibull|opstra)\b",
+    r"\b(?:my|our)\s+(?:levels|support|resistance)\s+(?:come|comes|are)\s+from\b",
 ]
 PROBLEM_RULES = [
     ("Needs predefined support/resistance levels", [r"support", r"resistance", r"levels?", r"key level"]),
     ("Needs a trading entry/target reference", [r"entry", r"target", r"where.*enter", r"where.*buy", r"where.*sell", r"stop[- ]?loss"]),
-    ("Needs short-term/session planning", [r"today", r"tomorrow", r"next session", r"intraday", r"day trade"]),
+    ("Needs short-term/session planning", [r"today", r"tomorrow", r"next session", r"intraday", r"day trade", r"opening"]),
 ]
-GENERIC_MARKERS = [
-    r"\bdaily discussion\b", r"\bdaily thread\b", r"\bweekly discussion\b", r"\bmegathread\b",
-    r"\btechnical analysis (?:guide|intro|introduction)\b", r"\bwhat is technical analysis\b",
-    r"\bnews\b.{0,50}\bmarket\b", r"\bmarket news\b", r"\bfor educational purposes\b",
-]
-AUTOMATED_MARKERS = [r"\bautomoderator\b", r"\bmod(erator)?\b", r"\bthis is the daily discussion\b", r"\bposted automatically\b", r"\bweekly thread\b"]
 
 
 def clean(x):
@@ -57,79 +61,149 @@ def near_duplicate_key(text):
     value = re.sub(r"[^a-z0-9]+", " ", clean(text).lower()).strip()
     return hashlib.sha256(value.encode()).hexdigest()[:16]
 
+def _market_hits(text):
+    return [m for m, pats in MARKETS.items() if found_any(text, pats)]
+
 def analyze(text):
     text = clean(text)
-    points = 0; reasons=[]; matched=[]
-    for label, weight, patterns in INTENT_RULES:
-        hits=[p for p in patterns if re.search(p,text,re.I|re.S)]
-        if hits:
-            points += weight; reasons.append(f"+{weight} {label}"); matched.extend(hits)
-    market_hits=[m for m,pats in MARKETS.items() if found_any(text,pats)]
-    if market_hits:
-        points += 10; reasons.append("+10 Supported market detected")
-    spam_hits=[]
-    for label,weight,patterns in SPAM_RULES:
-        hits=[p for p in patterns if re.search(p,text,re.I|re.S)]
-        if hits:
-            points += weight; reasons.append(f"{weight} {label}"); spam_hits.extend(hits)
-
-    automated = found_any(text, AUTOMATED_MARKERS)
+    market_hits = _market_hits(text)
+    explicit = found_any(text, EXPLICIT_REQUEST)
+    direct = found_any(text, DIRECT_REQUEST)
+    trading_action = found_any(text, TRADING_ACTION)
+    short_term = found_any(text, SHORT_TERM)
     generic = found_any(text, GENERIC_MARKERS)
-    direct_need = bool(re.search(r"\?|\b(?:need|looking for|want|where|what are|can someone|please|help me|give me|share|show me|tell me)\b", text, re.I))
-    explicit_levels_need = bool(re.search(r"(?:where|what|need|looking for|give|share|show|tell).{0,80}(?:support|resistance|levels?)|(?:support|resistance).{0,40}(?:level|levels)|\bkey levels?\b", text, re.I|re.S))
+    automated = found_any(text, AUTOMATED_MARKERS)
+    spam = found_any(text, SPAM_RULES)
+    competitor = found_any(text, COMPETITOR_RULES)
+
     problem = "No clear Daily Levels problem detected"
-    for label,patterns in PROBLEM_RULES:
-        if found_any(text,patterns): problem=label; break
+    for label, patterns in PROBLEM_RULES:
+        if found_any(text, patterns):
+            problem = label
+            break
 
-    # Precision adjustments: generic/automated threads are useful context but are not themselves purchase-intent leads.
-    quality_penalty = 0
-    quality_flags=[]
-    if automated:
-        quality_penalty += 30; quality_flags.append("Automated/moderator content")
-    if generic:
-        quality_penalty += 20; quality_flags.append("Generic discussion/educational content")
-    if not direct_need and not explicit_levels_need:
-        quality_penalty += 15; quality_flags.append("No explicit user need")
-    if spam_hits:
-        quality_penalty += 20; quality_flags.append("Promotional/spam indicators")
-    adjusted=max(0,min(100,points-quality_penalty))
+    # Relevance: does this signal contain a problem Daily Levels can reasonably solve?
+    relevance = 0
+    if problem != "No clear Daily Levels problem detected": relevance += 45
+    if market_hits: relevance += 25
+    if short_term: relevance += 10
+    if explicit: relevance += 15
+    if generic or automated: relevance -= 30
+    if spam: relevance -= 35
+    if competitor: relevance -= 10
+    relevance = max(0, min(100, relevance))
 
-    # Strong intent requires an actual need, not merely trading terminology.
-    if problem == "No clear Daily Levels problem detected":
-        fit = 0 if not explicit_levels_need else 35
+    # Buying intent: is the person actively looking for an answer/solution?
+    buying = 0
+    if explicit: buying += 45
+    if direct: buying += 20
+    if short_term: buying += 10
+    if trading_action: buying += 10
+    if market_hits: buying += 10
+    if competitor: buying -= 20
+    if generic: buying -= 25
+    if automated: buying -= 35
+    if spam: buying -= 40
+    # A recap that merely states existing levels is not a request.
+    recap_markers = [r"\bhere(?:'s| is) (?:my|the) levels?\b", r"\blevels? (?:for|at)\s+\d", r"\bmy trade recap\b", r"\btrade recap\b"]
+    if found_any(text, recap_markers) and not explicit:
+        buying -= 20
+    buying = max(0, min(100, buying))
+
+    # Product fit: how directly Daily Levels addresses the detected problem.
+    fit = 0
+    if problem != "No clear Daily Levels problem detected": fit += 45
+    if market_hits: fit += 30
+    if explicit: fit += 15
+    if short_term: fit += 10
+    if competitor: fit -= 15
+    if generic or automated: fit -= 30
+    if spam: fit -= 40
+    fit = max(0, min(100, fit))
+
+    # Priority intentionally requires multiple dimensions. Relevance alone cannot create HOT.
+    priority_score = round((0.40 * buying) + (0.30 * relevance) + (0.30 * fit))
+    if buying < 40 or relevance < 45 or fit < 45:
+        priority_score = min(priority_score, 74)
+    if buying < 25 or relevance < 30:
+        priority_score = min(priority_score, 59)
+    if spam or automated:
+        priority_score = min(priority_score, 24)
+
+    if priority_score >= 90:
+        category = "HOT"
+    elif priority_score >= 75:
+        category = "WARM"
+    elif priority_score >= 60:
+        category = "POSSIBLE"
     else:
-        fit = 40
-    if market_hits: fit += 35
-    if direct_need or explicit_levels_need: fit += 20
-    if adjusted >= 75 and not automated and not generic: fit += 10
-    fit=max(0,min(100,fit))
+        category = "LOW"
 
-    if spam_hits or adjusted < 40:
-        action="Do not contact" if spam_hits or adjusted < 25 else "Review manually"
-    elif fit >= 80 and (direct_need or explicit_levels_need): action="Review manually"
-    elif fit >= 55: action="Reply with educational information"
-    else: action="Create relevant content"
+    if spam or priority_score < 25:
+        action = "Do not contact"
+    elif competitor and buying >= 60:
+        action = "Review manually"
+    elif buying >= 70 and fit >= 75:
+        action = "Review manually"
+    elif relevance >= 60 and buying >= 45:
+        action = "Reply with educational information"
+    elif relevance >= 55:
+        action = "Create relevant content"
+    else:
+        action = "Do not contact"
 
     if problem != "No clear Daily Levels problem detected":
-        solution="Daily Levels can provide predefined daily support and resistance levels from the opening price."
+        solution = "Daily Levels can provide predefined daily support and resistance levels from the opening price."
     else:
-        solution="No direct Daily Levels solution match until a specific levels, entry, or short-term planning need is expressed."
+        solution = "No direct Daily Levels solution match until a specific levels, entry, or short-term planning need is expressed."
 
-    if adjusted>=90: category="HOT"
-    elif adjusted>=75: category="WARM"
-    elif adjusted>=60: category="POSSIBLE"
-    else: category="LOW"
-    spam_probability=min(1.0,0.5 if spam_hits else (0.2 if automated else 0.03))
-    confidence=min(1.0,0.35+(0.15 if market_hits else 0)+(0.2 if problem!="No clear Daily Levels problem detected" else 0)+(0.15 if direct_need else 0)+(0.1 if explicit_levels_need else 0))
-    if automated or generic: confidence=max(0.25,confidence-0.15)
-    explanation=" | ".join(reasons) if reasons else "No strong trading-intent signals detected"
-    if quality_flags: explanation += " | Quality flags: " + ", ".join(quality_flags)
+    reasons = []
+    if explicit: reasons.append("Explicit levels request")
+    if trading_action: reasons.append("Trading action language")
+    if short_term: reasons.append("Short-term context")
+    if direct: reasons.append("Direct question/request")
+    if market_hits: reasons.append("Supported market detected")
+    if competitor: reasons.append("Alternative level source detected")
+    flags=[]
+    if generic: flags.append("Generic discussion/educational content")
+    if automated: flags.append("Automated/moderator content")
+    if competitor: flags.append("Existing alternative/competitor source")
+    if spam: flags.append("Promotional/spam indicators")
+    if not direct and not explicit: flags.append("No explicit user request")
+
+    signal_type = "Automated/moderator" if automated else ("Generic discussion" if generic else "User-intent signal")
+    confidence = 0.45 + (0.15 if market_hits else 0) + (0.15 if problem != "No clear Daily Levels problem detected" else 0) + (0.15 if explicit else 0)
+    if generic or automated: confidence -= 0.20
+    confidence = max(0.25, min(0.95, confidence))
+
+    matched = []
+    if explicit: matched.append("levels request")
+    if action: matched.append("trade/action")
+    if short_term: matched.append("short-term")
+    if direct: matched.append("question/request")
+    if competitor: matched.append("alternative source")
+
+    explanation = " | ".join(reasons) if reasons else "No strong buying-intent signals detected"
+    if flags: explanation += " | Qualification flags: " + ", ".join(flags)
+
     return {
-        "intent_score": adjusted, "category": category, "market": ", ".join(market_hits) if market_hits else "Unknown",
-        "matched_terms": ", ".join(dict.fromkeys([p.strip(r"\b").replace(r"\s*"," ") for p in matched])),
-        "signal_explanation": explanation, "customer_fit_score": fit, "problem": problem,
-        "daily_levels_solution": solution, "recommended_action": action,
-        "spam_probability": round(spam_probability,2), "confidence": round(confidence,2),
-        "signal_type": "Automated/moderator" if automated else ("Generic discussion" if generic else "User-intent signal"),
-        "explicit_need": bool(direct_need or explicit_levels_need), "quality_flags": "; ".join(quality_flags),
+        "intent_score": int(priority_score),
+        "category": category,
+        "market": ", ".join(market_hits) if market_hits else "Unknown",
+        "matched_terms": ", ".join(matched),
+        "signal_explanation": explanation,
+        "customer_fit_score": int(fit),
+        "problem": problem,
+        "daily_levels_solution": solution,
+        "recommended_action": action,
+        "spam_probability": round(0.8 if spam else (0.35 if automated else (0.20 if generic else 0.03)), 2),
+        "confidence": round(confidence, 2),
+        "signal_type": signal_type,
+        "explicit_need": bool(explicit or direct),
+        "quality_flags": "; ".join(flags),
+        "relevance_score": int(relevance),
+        "buying_intent_score": int(buying),
+        "product_fit_score": int(fit),
+        "priority_score": int(priority_score),
+        "competition_detected": bool(competitor),
     }

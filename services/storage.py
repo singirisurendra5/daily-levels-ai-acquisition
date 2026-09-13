@@ -23,13 +23,13 @@ class Store:
   with self._conn() as con:
    con.executescript(SCHEMA)
    existing={r[1] for r in con.execute('PRAGMA table_info(signals)')}
-   additions={'daily_levels_solution':'TEXT','matched_terms':'TEXT','signal_explanation':'TEXT','spam_probability':'REAL DEFAULT 0','confidence':'REAL DEFAULT 0','signal_type':"TEXT DEFAULT 'User-intent signal'",'explicit_need':'INTEGER DEFAULT 0','quality_flags':'TEXT'}
+   additions={'daily_levels_solution':'TEXT','matched_terms':'TEXT','signal_explanation':'TEXT','spam_probability':'REAL DEFAULT 0','confidence':'REAL DEFAULT 0','signal_type':"TEXT DEFAULT 'User-intent signal'",'explicit_need':'INTEGER DEFAULT 0','quality_flags':'TEXT','relevance_score':'INTEGER DEFAULT 0','buying_intent_score':'INTEGER DEFAULT 0','product_fit_score':'INTEGER DEFAULT 0','priority_score':'INTEGER DEFAULT 0','competition_detected':'INTEGER DEFAULT 0'}
    for col,typ in additions.items():
     if col not in existing: con.execute(f'ALTER TABLE signals ADD COLUMN {col} {typ}')
  def upsert_signals(self,df):
   if df.empty:return 0
   now=datetime.now(timezone.utc).isoformat(); new=0
-  cols=['platform','url','text','date','source','ingested_at','intent_score','customer_fit_score','category','market','problem','daily_levels_solution','recommended_action','matched_terms','signal_explanation','spam_probability','confidence','signal_type','explicit_need','quality_flags']
+  cols=['platform','url','text','date','source','ingested_at','intent_score','customer_fit_score','category','market','problem','daily_levels_solution','recommended_action','matched_terms','signal_explanation','spam_probability','confidence','signal_type','explicit_need','quality_flags','relevance_score','buying_intent_score','product_fit_score','priority_score','competition_detected']
   with self._conn() as con:
    for _,r in df.iterrows():
     sid=str(r.get('signal_id','')).strip()
@@ -37,6 +37,9 @@ class Store:
     vals=[str(r.get(c,'')) for c in cols]
     for i,c in enumerate(['intent_score','customer_fit_score']): vals[cols.index(c)]=int(float(r.get(c,0)))
     vals[cols.index('spam_probability')]=float(r.get('spam_probability',0)); vals[cols.index('confidence')]=float(r.get('confidence',0)); vals[cols.index('explicit_need')]=int(bool(r.get('explicit_need',False)))
+    for c in ['relevance_score','buying_intent_score','product_fit_score','priority_score']:
+     vals[cols.index(c)] = int(float(r.get(c,0)))
+    vals[cols.index('competition_detected')] = int(bool(r.get('competition_detected',False)))
     exists=con.execute('SELECT 1 FROM signals WHERE signal_id=?',(sid,)).fetchone()
     if exists:
      sets=','.join(f'{c}=?' for c in cols)

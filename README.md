@@ -1,6 +1,6 @@
 # Daily Levels — AI Customer Acquisition
 
-MVP V3.3.1: live public-signal acquisition with persistent local workflow and human-in-the-loop review.
+MVP V3.5: live public-signal acquisition with persistent local workflow and human-in-the-loop review.
 
 ## Run
 
@@ -36,3 +36,11 @@ Signals, source runs, and conversion events are stored in `data/daily_levels.db`
 - Last-fetch metrics are read from persistent run history.
 - Recommended sources focus on public Reddit search feeds for trading-intent discovery; no private data or automated outreach.
 - Demo/sample data remains separate from live acquisition mode.
+
+
+## V3.5 Lead Qualification Engine
+V3.5 separates **Relevance**, **Buying Intent**, and **Product Fit**. Priority is a composite qualification score, so generic trading discussions, moderator posts, personal recaps, and existing alternative level sources do not automatically become HOT leads.
+
+Qualification fields: `relevance_score`, `buying_intent_score`, `product_fit_score`, `priority_score`, `competition_detected`. Use **Re-qualify stored signals** after upgrading an existing deployment so older records receive the V3.5 scoring model.
+
+Target funnel: Raw signals → Relevant → High-intent → High-fit → true HOT opportunities.
