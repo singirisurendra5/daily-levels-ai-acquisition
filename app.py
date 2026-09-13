@@ -290,8 +290,8 @@ else:
     st.info('No opportunities match the current filters. Add a source and fetch live signals, or select Demo mode to preview the workflow.')
 
 st.subheader('4. Opportunity queue')
-st.caption(f'Showing {len(filtered)} opportunities')
-queue_cols=['platform','text','market','intent_score','customer_fit_score','category','problem','recommended_action','status','url']
+st.caption(f'Showing {len(filtered)} opportunities • User-intent: {int((filtered.get("signal_type", pd.Series(dtype=str))=="User-intent signal").sum()) if not filtered.empty else 0}')
+queue_cols=['platform','text','market','intent_score','customer_fit_score','category','signal_type','explicit_need','problem','recommended_action','status','url']
 if filtered.empty:
     st.info('Opportunity queue is empty.')
 else:
@@ -310,6 +310,8 @@ if not filtered.empty:
     st.write(f"**Problem:** {row.problem}")
     st.write(f"**Suggested Daily Levels solution:** {row.daily_levels_solution}")
     st.write(f"**Recommended action:** {row.recommended_action}")
+    st.write(f"**Signal type:** {row.get('signal_type','User-intent signal')} • **Explicit need:** {'Yes' if bool(row.get('explicit_need',False)) else 'No'}")
+    if str(row.get('quality_flags','')).strip(): st.warning(f"Quality flags: {row.get('quality_flags')}")
     st.write(f"**Signal:** {row.text}")
     st.write(f"**Source:** {row.url}")
     x,y=st.columns(2)
