@@ -18,7 +18,7 @@ DB_PATH = ROOT / 'data' / 'daily_levels.db'
 
 st.set_page_config(page_title='Daily Levels — AI Customer Acquisition', page_icon='📈', layout='wide')
 st.title('Daily Levels — AI Customer Acquisition')
-st.caption('MVP V3.6 FINAL • True-need sales qualification • Public-signal acquisition • Human-in-the-loop')
+st.caption('MVP V3.6.1 • Accuracy fix • True-need sales qualification • Public-signal acquisition • Human-in-the-loop')
 
 store = Store(DB_PATH)
 

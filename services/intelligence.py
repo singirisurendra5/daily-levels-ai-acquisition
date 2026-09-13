@@ -24,14 +24,17 @@ SUPPORTED_MARKETS = set(MARKETS)
 # V3.5 separates three concepts: relevance, buying intent, and product fit.
 # This prevents a trader recap that mentions levels from looking like a buyer.
 EXPLICIT_REQUEST = [
-    r"\b(?:where|what are|what's|whats|need|give me|share|show me|tell me|can someone|anyone know|help me|how do i)\b.{0,120}\b(?:support|resistance|levels?)\b",
-    r"\blooking for\s+(?:reliable|accurate|key|clear|daily|predefined)\b.{0,100}\b(?:support|resistance|levels?)\b",
-    r"\b(?:support|resistance)(?:\s+and\s+(?:support|resistance))?\b.{0,50}\bfor\s+(?:today|tomorrow|next session|the next session)\b\s*\?",
+    # Tight request grammar: mentioning support/resistance later in an
+    # educational post must not count as a request for levels.
+    r"\b(?:where(?:\s+can|\s+do)?\s+i\s+(?:get|find)|where\s+(?:are|can i get|do i get)|what\s+(?:are|is)|what's|whats|need|give me|share|show me|tell me|can someone|anyone know|help me|how do i (?:get|find|calculate))\b.{0,45}\b(?:support|resistance|levels?)\b",
+    r"\blooking for\s+(?:reliable|accurate|key|clear|daily|predefined)\b.{0,60}\b(?:support|resistance|levels?)\b",
+    r"\b(?:support|resistance|levels?)\b.{0,35}\bfor\s+(?:today|tomorrow|next session|the next session)\b\s*\?",
+    r"\b(?:need|looking for|want)\b.{0,35}\b(?:today|tomorrow|next session)\b.{0,35}\b(?:support|resistance|levels?)\b",
 ]
 TRADING_ACTION = [r"\b(?:enter|entry|buy|sell|long|short|target|stop[- ]?loss|position|trade|trading)\b"]
 SHORT_TERM = [r"\b(?:today|tomorrow|intraday|day trade|next session|next trading day|opening|market open)\b"]
 DIRECT_REQUEST = [r"\?", r"\b(?:can someone|anyone know|please|help me|how do i|where can i|what should i|need|looking for|want|give me|share|show me|tell me)\b"]
-GENERIC_MARKERS = [r"\bdaily discussion\b", r"\bdaily thread\b", r"\bweekly discussion\b", r"\bmegathread\b", r"\btechnical analysis (?:guide|intro|introduction)\b", r"\bwhat is technical analysis\b", r"\bmarket news\b", r"\bfor educational purposes\b"]
+GENERIC_MARKERS = [r"\bdaily discussion\b", r"\brisk[- ]?reward\b", r"\bdo you actually follow\b", r"\bcurious:?\b.{0,80}\b(?:traders|trading)\b", r"\bdaily thread\b", r"\bweekly discussion\b", r"\bmegathread\b", r"\btechnical analysis (?:guide|intro|introduction)\b", r"\bwhat is technical analysis\b", r"\bmarket news\b", r"\bfor educational purposes\b"]
 AUTOMATED_MARKERS = [r"\bautomoderator\b", r"\bmod(erator)?\b", r"\bthis is the daily discussion\b", r"\bposted automatically\b", r"\bweekly thread\b"]
 SPAM_RULES = [r"\bgiveaway\b", r"\bpromo code\b", r"\bairdrop\b", r"\bfree money\b", r"\bcasino\b", r"\bbetting\b", r"\bsubscribe\s+to\s+my\s+channel\b", r"\baffiliate\b"]
 COMPETITOR_RULES = [
