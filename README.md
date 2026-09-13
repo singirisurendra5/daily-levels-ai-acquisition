@@ -1,6 +1,6 @@
 # Daily Levels — AI Customer Acquisition
 
-MVP V3.5.1: live public-signal acquisition with persistent local workflow and human-in-the-loop review.
+MVP V3.5.2: live public-signal acquisition with persistent local workflow and human-in-the-loop review.
 
 ## Run
 
@@ -51,3 +51,10 @@ Target funnel: Raw signals → Relevant → High-intent → High-fit → true HO
 V3.5.1 enforces a single qualification chain: **Relevance → Buying Intent → Product Fit → Priority**. Priority is calculated only from those displayed qualification scores and is protected by hard gates: weak buying intent, no explicit user need, generic/automated/recap content, weak relevance/fit, and detected alternative sources cannot become HOT opportunities.
 
 Existing stored signals are automatically re-qualified once to remove legacy V3.4/V3.5 category/score inconsistencies. The queue is ordered by true priority, and missing quality flags are normalized instead of displaying `nan`.
+
+
+## V3.5.2 — False-positive & competition detection
+- Separates genuine user requests from trade recaps and discussion questions.
+- Detects stated/existing level sources and reduces qualification when the trader already has levels.
+- Strongly downgrades signals that cite an alternative level provider.
+- HOT requires explicit need, strong buying intent, relevance, and product fit.

@@ -24,10 +24,9 @@ SUPPORTED_MARKETS = set(MARKETS)
 # V3.5 separates three concepts: relevance, buying intent, and product fit.
 # This prevents a trader recap that mentions levels from looking like a buyer.
 EXPLICIT_REQUEST = [
-    r"\b(?:where|what are|what's|whats|need|looking for|give me|share|show me|tell me)\b.{0,100}\b(?:support|resistance|levels?)\b",
-    r"\b(?:support|resistance)\s+(?:and|&|/)\s+(?:resistance|support)\b",
-    r"\b(?:support|resistance)\s+(?:level|levels)\b.{0,80}\?",
-    r"\bkey\s+levels?\b.{0,80}\?",
+    r"\b(?:where|what are|what's|whats|need|give me|share|show me|tell me|can someone|anyone know|help me|how do i)\b.{0,120}\b(?:support|resistance|levels?)\b",
+    r"\blooking for\s+(?:reliable|accurate|key|clear|daily|predefined)\b.{0,100}\b(?:support|resistance|levels?)\b",
+    r"\b(?:support|resistance)(?:\s+and\s+(?:support|resistance))?\b.{0,50}\bfor\s+(?:today|tomorrow|next session|the next session)\b\s*\?",
 ]
 TRADING_ACTION = [r"\b(?:enter|entry|buy|sell|long|short|target|stop[- ]?loss|position|trade|trading)\b"]
 SHORT_TERM = [r"\b(?:today|tomorrow|intraday|day trade|next session|next trading day|opening|market open)\b"]
@@ -68,6 +67,8 @@ def analyze(text):
     text = clean(text)
     market_hits = _market_hits(text)
     explicit = found_any(text, EXPLICIT_REQUEST)
+    if explicit and found_any(text, [r"\bcurious how others\b", r"\banyone else seeing\b", r"\bmy plan\b"]):
+        explicit = False
     direct = found_any(text, DIRECT_REQUEST)
     trading_action = found_any(text, TRADING_ACTION)
     short_term = found_any(text, SHORT_TERM)
@@ -75,6 +76,12 @@ def analyze(text):
     automated = found_any(text, AUTOMATED_MARKERS)
     spam = found_any(text, SPAM_RULES)
     competitor = found_any(text, COMPETITOR_RULES)
+    existing_levels = found_any(text, [
+        r"\bsource\s*[:=-]\s*(?:https?://)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\b",
+        r"\bsource\s+(?:for|of)\s+(?:the\s+)?levels?\b",
+        r"\b(?:my|our|these)\s+levels?\b",
+        r"\b(?:call|put)\s+wall\b",
+    ])
 
     recap_markers = [
         r"\bhere(?:'s| is) (?:my|the) levels?\b",
@@ -114,6 +121,7 @@ def analyze(text):
     if trading_action: buying += 10
     if market_hits: buying += 10
     if competitor: buying -= 30
+    if existing_levels and not explicit: buying -= 25
     if generic: buying -= 25
     if automated: buying -= 35
     if spam: buying -= 40
@@ -129,6 +137,7 @@ def analyze(text):
     if explicit: fit += 15
     if short_term: fit += 10
     if competitor: fit -= 20
+    if existing_levels and not explicit: fit -= 15
     if generic or automated: fit -= 30
     if spam: fit -= 40
     if problem == "No clear Daily Levels problem detected": fit = 0
@@ -148,6 +157,10 @@ def analyze(text):
         priority_score = min(priority_score, 24)
     if competitor and buying < 60:
         priority_score = min(priority_score, 59)
+    if existing_levels and not explicit:
+        priority_score = min(priority_score, 59)
+    if existing_levels and competitor:
+        priority_score = min(priority_score, 39)
 
     if priority_score >= 90:
         category = "HOT"
@@ -188,6 +201,7 @@ def analyze(text):
     if automated: flags.append("Automated/moderator content")
     if recap: flags.append("Trade/market recap without explicit request")
     if competitor: flags.append("Existing alternative/competitor source")
+    elif existing_levels and not explicit: flags.append("Already has or cites existing levels")
     if spam: flags.append("Promotional/spam indicators")
     if not direct and not explicit: flags.append("No explicit user request")
 
@@ -225,7 +239,7 @@ def analyze(text):
         "buying_intent_score": int(buying),
         "product_fit_score": int(fit),
         "priority_score": int(priority_score),
-        "competition_detected": bool(competitor),
+        "competition_detected": bool(competitor or existing_levels),
         "qualification_version": "3.5.1",
     }
 
