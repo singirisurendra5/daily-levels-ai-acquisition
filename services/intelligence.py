@@ -28,21 +28,6 @@ EXPLICIT_REQUEST = [
     r"\blooking for\s+(?:reliable|accurate|key|clear|daily|predefined)\b.{0,100}\b(?:support|resistance|levels?)\b",
     r"\b(?:support|resistance)(?:\s+and\s+(?:support|resistance))?\b.{0,50}\bfor\s+(?:today|tomorrow|next session|the next session)\b\s*\?",
 ]
-UNMET_NEED_RULES = [
-    r"\b(?:need|looking for|want|searching for|trying to find|where can i get|how can i get)\b.{0,100}\b(?:support|resistance|levels?)\b",
-    r"\b(?:support|resistance|levels?)\b.{0,80}\b(?:for today|for tomorrow|for the next session|next session)\b",
-    r"\b(?:reliable|accurate|clear|predefined|daily|key)\b.{0,80}\b(?:support|resistance|levels?)\b.{0,40}\?",
-]
-DISCUSSION_ONLY = [
-    r"\b(?:do you|does anyone|anyone else|curious|interested|what do you think|share your|let\'s talk|discussion|experiences?)\b",
-    r"\b(?:i\'m curious|i am curious|i\'d like to hear|i would like to hear)\b",
-]
-EXISTING_SOLUTION = [
-    r"\bsource\s*[:=-]", r"\bsource\s+(?:for|of)\s+(?:the\s+)?levels?\b",
-    r"\b(?:using|use|from)\s+(?:gammawalls|tradingview|investing\.com|zerodha|upstox|sensibull|opstra)\b",
-    r"\b(?:my|our|these)\s+(?:levels|support|resistance)\b",
-    r"\b(?:call|put)\s+wall\b",
-]
 TRADING_ACTION = [r"\b(?:enter|entry|buy|sell|long|short|target|stop[- ]?loss|position|trade|trading)\b"]
 SHORT_TERM = [r"\b(?:today|tomorrow|intraday|day trade|next session|next trading day|opening|market open)\b"]
 DIRECT_REQUEST = [r"\?", r"\b(?:can someone|anyone know|please|help me|how do i|where can i|what should i|need|looking for|want|give me|share|show me|tell me)\b"]
@@ -98,6 +83,25 @@ def analyze(text):
         r"\b(?:call|put)\s+wall\b",
     ])
 
+    # V3.6: separate a true Daily Levels need from a post that merely mentions
+    # support/resistance.  A genuine problem statement can qualify even without
+    # an explicit "give me levels" request, but generic trading questions cannot.
+    unmet_need = found_any(text, [
+        r"\b(?:need|needs|looking for|searching for|trying to find|can't find|cannot find|unable to find|where can i get|where do i get)\b.{0,100}\b(?:support|resistance|levels?)\b",
+        r"\b(?:struggl(?:e|ing)|difficulty|difficult|problem|issue|confused|not sure|unsure|unclear)\b.{0,100}\b(?:support|resistance|levels?)\b",
+        r"\b(?:reliable|accurate|consistent|clear|predefined|daily)\s+(?:support|resistance|levels?)\b",
+        r"\b(?:support|resistance|levels?)\b.{0,80}\b(?:hard to find|difficult to find|can't find|cannot find|need|looking for|reliable|accurate|consistent|predefined)\b",
+    ])
+    # Explicit request is only a true need when it asks for levels, not merely
+    # when a question happens to contain the word support/resistance.
+    true_need = bool(explicit or unmet_need)
+    if generic or automated or spam:
+        true_need = bool(explicit and not (generic or automated))
+    if competitor and not explicit:
+        true_need = False
+    if existing_levels and not explicit:
+        true_need = False
+
     recap_markers = [
         r"\bhere(?:'s| is) (?:my|the) levels?\b",
         r"\blevels? (?:for|at)\s+\d",
@@ -107,104 +111,99 @@ def analyze(text):
     ]
     recap = found_any(text, recap_markers) and not explicit
 
-    unmet_need = found_any(text, UNMET_NEED_RULES)
-    discussion_only = found_any(text, DISCUSSION_ONLY)
-    existing_solution = found_any(text, EXISTING_SOLUTION)
-    # A question is not automatically a buying signal. It must express a concrete
-    # unmet need for the type of levels Daily Levels provides.
-    true_need = bool(explicit and unmet_need and not discussion_only)
-
-    # Generic/automated content that merely mentions levels is not treated as a
-    # concrete Daily Levels problem unless there is a clear user need.
     problem = "No clear Daily Levels problem detected"
-    if not (generic or automated) or explicit:
-        for label, patterns in PROBLEM_RULES:
-            if found_any(text, patterns):
-                problem = label
-                break
+    if true_need:
+        problem = "Needs predefined support/resistance levels"
+    elif found_any(text, [r"\b(?:entry|target|where.*enter|where.*buy|where.*sell|stop[- ]?loss)\b"]) and (explicit or unmet_need):
+        problem = "Needs a trading entry/target reference"
+    elif short_term and true_need:
+        problem = "Needs short-term/session planning"
 
-    # Sales qualification: mention/relevance is deliberately weaker than true buyer need.
+    # Relevance measures whether Daily Levels plausibly addresses an actual need.
     relevance = 0
-    if problem != "No clear Daily Levels problem detected": relevance += 30
+    if true_need: relevance += 65
+    elif problem != "No clear Daily Levels problem detected": relevance += 30
     if market_hits: relevance += 20
-    if short_term: relevance += 10
-    if true_need: relevance += 40
-    elif explicit: relevance += 5
-    if existing_solution: relevance -= 20
-    if generic or automated or discussion_only: relevance -= 30
-    if spam: relevance -= 50
-    if recap and not true_need: relevance -= 20
+    if short_term: relevance += 5
+    if generic or automated: relevance -= 35
+    if spam: relevance -= 40
+    if competitor and not explicit: relevance -= 25
+    if recap and not explicit: relevance -= 25
     relevance = max(0, min(100, relevance))
 
+    # Buying intent: explicit demand is strongest; problem-aware signals are
+    # qualified opportunities but are not sales-ready without stronger intent.
     buying = 0
-    if true_need: buying += 60
-    if unmet_need and not discussion_only: buying += 15
+    if explicit: buying += 65
+    elif unmet_need: buying += 45
+    if direct and true_need and not (generic or automated): buying += 10
     if short_term and true_need: buying += 10
     if market_hits and true_need: buying += 10
-    if competitor: buying -= 30
-    if existing_solution and not true_need: buying -= 35
-    if discussion_only: buying -= 35
-    if generic: buying -= 30
+    if competitor: buying -= 35
+    if existing_levels and not explicit: buying -= 30
+    if generic: buying -= 40
     if automated: buying -= 45
-    if spam: buying -= 60
-    if recap and not true_need: buying -= 35
+    if spam: buying -= 50
+    if recap: buying -= 30
     buying = max(0, min(100, buying))
 
     fit = 0
-    if true_need and problem == "Needs predefined support/resistance levels": fit += 65
-    elif true_need and problem == "Needs a trading entry/target reference": fit += 35
-    elif true_need and problem == "Needs short-term/session planning": fit += 30
-    if market_hits and true_need: fit += 20
-    if short_term and true_need: fit += 10
+    if true_need: fit += 65
+    elif problem == "Needs a trading entry/target reference": fit += 25
+    if market_hits: fit += 20
+    if short_term and true_need: fit += 5
     if competitor: fit -= 20
-    if existing_solution and not true_need: fit -= 25
-    if generic or automated or discussion_only: fit -= 35
-    if spam: fit -= 60
-    if not true_need: fit = min(fit, 35)
+    if existing_levels and not explicit: fit -= 20
+    if generic or automated: fit -= 35
+    if spam: fit -= 50
+    if problem == "No clear Daily Levels problem detected": fit = 0
     fit = max(0, min(100, fit))
 
-    # Priority is sales-readiness, not just topical relevance.
-    priority_score = round((0.45 * buying) + (0.25 * relevance) + (0.30 * fit))
-    if not true_need: priority_score = min(priority_score, 59)
-    if buying < 40 or relevance < 45 or fit < 45: priority_score = min(priority_score, 74)
-    if buying < 25 or relevance < 30: priority_score = min(priority_score, 39)
-    if competitor: priority_score = min(priority_score, 59)
-    if existing_solution and not true_need: priority_score = min(priority_score, 39)
-    if spam or automated: priority_score = min(priority_score, 19)
-    if generic or discussion_only or recap: priority_score = min(priority_score, 49)
+    # Sales-ready requires a true unmet need, strong buying intent, and strong fit.
+    sales_ready = bool(true_need and explicit and buying >= 70 and fit >= 75 and not generic and not automated and not spam)
 
-    if priority_score >= 90:
+    priority_score = round((0.40 * buying) + (0.30 * relevance) + (0.30 * fit))
+    if not sales_ready:
+        priority_score = min(priority_score, 89 if (true_need and buying >= 45 and fit >= 60) else 74)
+    if buying < 25 or relevance < 30:
+        priority_score = min(priority_score, 59)
+    if not true_need:
+        priority_score = min(priority_score, 39 if competitor or existing_levels else 59)
+    if competitor and buying < 70:
+        priority_score = min(priority_score, 59)
+    if existing_levels and not explicit:
+        priority_score = min(priority_score, 39)
+    if spam or automated:
+        priority_score = min(priority_score, 24)
+
+    if sales_ready:
         category = "HOT"
-    elif priority_score >= 75:
+    elif true_need and buying >= 45 and fit >= 60:
         category = "WARM"
-    elif priority_score >= 60:
+    elif relevance >= 45 and fit >= 45:
         category = "POSSIBLE"
     else:
         category = "LOW"
 
     if spam or automated or priority_score < 25:
         action = "Do not contact"
-    elif competitor and buying >= 60:
+    elif sales_ready:
         action = "Review manually"
-    elif buying >= 70 and fit >= 75 and true_need:
-        action = "Review manually"
-    elif true_need and buying >= 50:
+    elif true_need and buying >= 45:
         action = "Reply with educational information"
-    elif relevance >= 55 and not discussion_only:
+    elif relevance >= 45:
         action = "Create relevant content"
     else:
         action = "Do not contact"
 
-    if problem != "No clear Daily Levels problem detected":
+    if true_need:
         solution = "Daily Levels can provide predefined daily support and resistance levels from the opening price."
     else:
-        solution = "No direct Daily Levels solution match until a specific levels, entry, or short-term planning need is expressed."
+        solution = "No direct Daily Levels solution match until a specific unmet levels need is expressed."
 
     reasons = []
     if explicit: reasons.append("Explicit levels request")
-    if true_need: reasons.append("Concrete unmet need for levels")
-    if discussion_only: reasons.append("Discussion/question without purchase need")
-    if existing_solution: reasons.append("Existing level source or method detected")
+    elif unmet_need: reasons.append("Problem-aware levels need")
     if trading_action: reasons.append("Trading action language")
     if short_term: reasons.append("Short-term context")
     if direct: reasons.append("Direct question/request")
@@ -214,51 +213,49 @@ def analyze(text):
     if generic: flags.append("Generic discussion/educational content")
     if automated: flags.append("Automated/moderator content")
     if recap: flags.append("Trade/market recap without explicit request")
-    if discussion_only: flags.append("Discussion-only signal")
-    if existing_solution: flags.append("Existing solution/level source")
     if competitor: flags.append("Existing alternative/competitor source")
     elif existing_levels and not explicit: flags.append("Already has or cites existing levels")
     if spam: flags.append("Promotional/spam indicators")
-    if not direct and not explicit: flags.append("No explicit user request")
+    if not true_need: flags.append("No concrete Daily Levels need")
 
-    signal_type = "Automated/moderator" if automated else ("User-intent signal" if true_need else "Generic discussion")
-    confidence = 0.45 + (0.15 if market_hits else 0) + (0.15 if problem != "No clear Daily Levels problem detected" else 0) + (0.15 if explicit else 0)
+    signal_type = "Automated/moderator" if automated else ("Generic discussion" if generic else "User-intent signal")
+    confidence = 0.45 + (0.15 if market_hits else 0) + (0.15 if true_need else 0) + (0.15 if explicit else 0)
     if generic or automated or recap: confidence -= 0.20
+    if competitor: confidence += 0.05
     confidence = max(0.25, min(0.95, confidence))
 
     matched = []
     if explicit: matched.append("levels request")
+    elif unmet_need: matched.append("problem-aware need")
     if trading_action: matched.append("trade/action")
     if short_term: matched.append("short-term")
     if direct: matched.append("question/request")
     if competitor: matched.append("alternative source")
 
-    explanation = " | ".join(reasons) if reasons else "No strong buying-intent signals detected"
+    explanation = " | ".join(reasons) if reasons else "No strong Daily Levels need detected"
     if flags: explanation += " | Qualification flags: " + ", ".join(flags)
 
-    return {
-        "intent_score": int(priority_score),
-        "category": category,
-        "market": ", ".join(market_hits) if market_hits else "Unknown",
-        "matched_terms": ", ".join(matched),
-        "signal_explanation": explanation,
-        "customer_fit_score": int(fit),
-        "problem": problem,
-        "daily_levels_solution": solution,
-        "recommended_action": action,
-        "spam_probability": round(0.8 if spam else (0.35 if automated else (0.20 if generic else 0.03)), 2),
-        "confidence": round(confidence, 2),
-        "signal_type": signal_type,
-        "explicit_need": bool(true_need),
-        "unmet_need": bool(unmet_need),
-        "sales_ready": bool(true_need and buying >= 70 and fit >= 75 and priority_score >= 90),
-        "lead_reason": "; ".join(reasons) if reasons else "No strong sales-intent evidence",
-        "quality_flags": "; ".join(flags),
-        "relevance_score": int(relevance),
-        "buying_intent_score": int(buying),
-        "product_fit_score": int(fit),
-        "priority_score": int(priority_score),
-        "competition_detected": bool(competitor or existing_levels),
-        "qualification_version": "3.6-final",
-    }
+    buyer_stage = "Ready to review" if sales_ready else ("Problem-aware" if true_need else ("Exploring" if relevance >= 45 else "Not a lead"))
+    lead_reason = (
+        "Explicit unmet Daily Levels need with strong fit and buying intent." if sales_ready else
+        "Concrete support/resistance need is present, but buying intent is not yet strong enough for sales-ready." if true_need else
+        "No concrete unmet Daily Levels need; content is better suited for education or filtering."
+    )
+    content_angle = "Daily support/resistance from the opening price" if true_need else "Educational content about identifying reliable daily levels"
 
+    return {
+        "intent_score": int(priority_score), "category": category,
+        "market": ", ".join(market_hits) if market_hits else "Unknown",
+        "matched_terms": ", ".join(matched), "signal_explanation": explanation,
+        "customer_fit_score": int(fit), "problem": problem,
+        "daily_levels_solution": solution, "recommended_action": action,
+        "spam_probability": round(0.8 if spam else (0.35 if automated else (0.20 if generic else 0.03)), 2),
+        "confidence": round(confidence, 2), "signal_type": signal_type,
+        "explicit_need": bool(explicit), "quality_flags": "; ".join(flags),
+        "relevance_score": int(relevance), "buying_intent_score": int(buying),
+        "product_fit_score": int(fit), "priority_score": int(priority_score),
+        "competition_detected": bool(competitor or existing_levels),
+        "sales_ready": bool(sales_ready), "buyer_stage": buyer_stage,
+        "lead_reason": lead_reason, "content_angle": content_angle,
+        "unmet_need": bool(true_need), "qualification_version": "3.6",
+    }
