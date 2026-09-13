@@ -1,6 +1,6 @@
-# Daily Levels — AI Customer Acquisition MVP v2
+# Daily Levels — AI Customer Acquisition MVP V3.1
 
-This version fixes the scoring layer and makes the score transparent.
+V3.1 builds on MVP V2. It does not replace the V2 scoring model; it adds a live public-signal ingestion layer and an acquisition opportunity queue.
 
 ## Run
 
@@ -9,65 +9,42 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## CSV
+## V3.1 additions
 
-Required:
-- platform
-- url
-- text
+- Configurable public RSS/Atom ingestion
+- Public Reddit RSS ingestion
+- Public YouTube channel feed ingestion
+- Source errors surfaced in the UI
+- Normalized signal records
+- Exact/near-duplicate detection
+- Customer-fit score
+- Problem detection
+- Daily Levels solution matching
+- Recommended human action
+- Opportunity queue sorted by fit and intent
+- Top platform/market/problem summaries
+- V3.1 export
 
-Optional:
-- date
+## Configure sources
 
-## Scoring
+Edit `data/sources.json`:
 
-Maximum 100:
-- +45 explicit support/resistance or levels request
-- +25 active trading language
-- +15 short-term/session context
-- +5 direct question/request
-- +10 market detected
-- -25 possible promotional/spam language
-
-Categories:
-- HOT: 90–100
-- WARM: 75–89
-- POSSIBLE: 60–74
-- LOW: below 60
-
-The score is an intent/fit prioritization heuristic. It does not prove that someone is a buyer.
-
-## Folder
-
-```text
-daily_levels_ai_acquisition_mvp_v2/
-├── app.py
-├── requirements.txt
-├── README.md
-└── data/
-    └── sample_signals.csv
+```json
+{
+  "rss_feeds": [
+    {"platform": "Example", "url": "https://example.com/feed.xml"}
+  ],
+  "reddit": [
+    {"subreddit": "stocks", "query": "NIFTY support resistance", "sort": "new", "limit": 25}
+  ],
+  "youtube_channels": [
+    {"channel_id": "UCxxxxxxxxxxxxxxxx", "limit": 15}
+  ]
+}
 ```
 
-## Future-ready design
+Only configure public sources and endpoints that your use complies with. This project intentionally does not implement private-data access or automated outreach.
 
-Keep the dashboard's normalized output contract:
+## V2 compatibility
 
-- intent_score
-- category
-- market
-- matched_terms
-- signal_explanation
-
-A future AI classifier can replace `analyze()` while returning these fields plus:
-- problem
-- buying_intent
-- daily_levels_fit
-- spam_probability
-- duplicate_probability
-- confidence
-
-Then add approved public-data ingestion adapters for YouTube/Reddit.
-
-## Responsible use
-
-Only use public, permitted data. Follow platform API/automation rules. Do not access private watch history, private WhatsApp/Telegram chats, credentials, prohibited data, or use mass unsolicited messaging.
+The V2 normalized fields remain available, including `intent_score`, `category`, `market`, `matched_terms`, and `signal_explanation`. V3.1 adds `customer_fit_score`, `problem`, `daily_levels_solution`, `recommended_action`, `spam_probability`, `confidence`, `signal_id`, and duplicate metadata.
