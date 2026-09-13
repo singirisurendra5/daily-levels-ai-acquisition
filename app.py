@@ -18,7 +18,7 @@ DB_PATH = ROOT / 'data' / 'daily_levels.db'
 
 st.set_page_config(page_title='Daily Levels — AI Customer Acquisition', page_icon='📈', layout='wide')
 st.title('Daily Levels — AI Customer Acquisition')
-st.caption('MVP V3.6.2 • Accuracy fix • True-need sales qualification • Public-signal acquisition • Human-in-the-loop')
+st.caption('MVP V3.6.3 • Accuracy fix • True-need sales qualification • Public-signal acquisition • Human-in-the-loop')
 
 store = Store(DB_PATH)
 
@@ -91,7 +91,7 @@ def requalify_stored_signals():
 
 
 def needs_requalification(df):
-    return (not df.empty and ('qualification_version' not in df.columns or df.qualification_version.fillna('legacy').astype(str).ne('3.6.2').any()))
+    return (not df.empty and ('qualification_version' not in df.columns or df.qualification_version.fillna('legacy').astype(str).ne('3.6.3').any()))
 
 
 def fetch_one(kind, item):
@@ -320,7 +320,7 @@ else:
 
 st.subheader('4. Opportunity queue')
 st.caption(f'Showing {len(filtered)} opportunities • User-intent: {int((filtered.get("signal_type", pd.Series(dtype=str))=="User-intent signal").sum()) if not filtered.empty else 0}')
-queue_cols=['platform','text','market','evidence_type','relevance_score','buying_intent_score','product_fit_score','priority_score','category','sales_ready','buyer_stage','competition_detected','problem','recommended_action','status','url']
+queue_cols=['platform','text','market','evidence_type','evidence_strength','relevance_score','buying_intent_score','product_fit_score','priority_score','category','sales_ready','buyer_stage','competition_detected','problem','recommended_action','status','url']
 if filtered.empty:
     st.info('Opportunity queue is empty.')
 else:
@@ -338,7 +338,7 @@ if not filtered.empty:
     a,b,c,d,e,f=st.columns(6); a.metric('Relevance',int(row.get('relevance_score',0) or 0)); b.metric('Buying intent',int(row.get('buying_intent_score',0) or 0)); c.metric('Product fit',int(row.get('product_fit_score',0) or 0)); d.metric('Priority',f"{int(row.get('priority_score',0) or 0)} — {row.category}"); e.metric('Confidence',f"{float(row.get('confidence',0.5) or 0.5):.0%}"); f.metric('Sales-ready','YES' if bool(row.get('sales_ready',False)) else 'NO')
     st.write(f"**Buyer stage:** {clean(row.get('buyer_stage','Not a lead'))}")
     st.write(f"**Lead reason:** {clean(row.get('lead_reason',''))}")
-    st.write(f"**Lead evidence:** {clean(row.get('evidence_type','Context-only'))}")
+    st.write(f"**Lead evidence:** {clean(row.get('evidence_type','Context-only'))} • **Strength:** {clean(row.get('evidence_strength','Weak'))}")
     evidence_sentence = clean(row.get('evidence_sentence',''))
     if evidence_sentence: st.info(f"Evidence sentence: {evidence_sentence}")
     st.write(f"**Content angle:** {clean(row.get('content_angle',''))}")
@@ -381,6 +381,8 @@ if not filtered.empty and 'buying_intent_score' in filtered:
     q4.metric('Alternative source detected', int(filtered.competition_detected.sum()))
     q5.metric('Sales-ready', int(filtered.sales_ready.sum()) if 'sales_ready' in filtered else 0)
     st.write('**Evidence audit:** ' + ' • '.join([f"{k}: {int(v)}" for k,v in filtered.evidence_type.value_counts().items()]))
+    if 'evidence_strength' in filtered:
+        st.write('**Evidence strength:** ' + ' • '.join([f"{k}: {int(v)}" for k,v in filtered.evidence_strength.value_counts().items()]))
     st.write('**Target funnel:** Raw signals → Evidence-qualified → Problem-aware / Direct request → Sales-ready → Human review → Sale.')
     st.dataframe(filtered.groupby('market').agg(signals=('signal_id','count'), relevant=('relevance_score',lambda s:int((s>=45).sum())), high_intent=('buying_intent_score',lambda s:int((s>=70).sum())), high_fit=('product_fit_score',lambda s:int((s>=75).sum()))).reset_index().sort_values(['high_intent','high_fit'],ascending=False),use_container_width=True,hide_index=True)
 else:

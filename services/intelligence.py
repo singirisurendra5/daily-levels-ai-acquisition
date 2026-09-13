@@ -2,7 +2,7 @@ import re
 import hashlib
 import pandas as pd
 
-QUALIFICATION_VERSION = "3.6.2"
+QUALIFICATION_VERSION = "3.6.3"
 
 MARKETS = {
     "India (NIFTY)": [r"\bnifty(?:\s*50)?\b"],
@@ -35,12 +35,12 @@ DIRECT_LEVEL_REQUEST = [
 # Problem-aware evidence is deliberately narrower than V3.6.1. The complaint must
 # be about finding/quality of levels, not merely a trading problem later mentioning levels.
 PROBLEM_AWARE = [
-    r"\b(?:i(?:'m|\s+am)?\s+)?(?:struggl(?:e|ing)|having\s+(?:a\s+)?(?:hard|difficult)\s+time|difficulty|difficult|hard)\b.{0,45}\b(?:to\s+find|finding|get|getting)\b.{0,35}\b(?:support|resistance|levels?)\b",
-    r"\b(?:can't|cannot|unable)\s+(?:to\s+)?(?:find|get)\b.{0,35}\b(?:support|resistance|levels?)\b",
-    r"\b(?:need|looking\s+for|searching\s+for|trying\s+to\s+find)\b.{0,45}\b(?:reliable|accurate|consistent|clear|predefined|daily)?\s*(?:support|resistance|levels?)\b",
-    r"\b(?:support|resistance|levels?)\b.{0,45}\b(?:are\s+)?(?:hard\s+to\s+find|difficult\s+to\s+find|unreliable|inconsistent|unclear)\b",
+    # The difficulty/complaint must directly point to finding or obtaining levels.
+    r"\b(?:i(?:'m|\s+am)?\s+)?(?:struggl(?:e|ing)|having\s+(?:a\s+)?(?:hard|difficult)\s+time|difficulty|hard)\s+(?:to\s+)?(?:find|finding|get|getting)\s+(?:reliable\s+|accurate\s+|consistent\s+|clear\s+|predefined\s+|daily\s+)?(?:[a-z0-9&/-]+\s+){0,3}(?:support|resistance|levels?)\b",
+    r"\b(?:can't|cannot|unable)\s+(?:to\s+)?(?:find|get)\s+(?:reliable\s+|accurate\s+|consistent\s+|clear\s+|predefined\s+|daily\s+)?(?:[a-z0-9&/-]+\s+){0,3}(?:support|resistance|levels?)\b",
+    r"\b(?:need|looking\s+for|searching\s+for|trying\s+to\s+find)\s+(?:reliable\s+|accurate\s+|consistent\s+|clear\s+|predefined\s+|daily\s+)?(?:[a-z0-9&/-]+\s+){0,3}(?:support|resistance|levels?)\b",
+    r"\b(?:support|resistance|levels?)\b\s+(?:are\s+)?(?:hard\s+to\s+find|difficult\s+to\s+find|unreliable|inconsistent|unclear)\b",
 ]
-
 TRADING_ACTION = [r"\b(?:enter|entry|buy|sell|long|short|target|stop[- ]?loss|position|trade|trading)\b"]
 SHORT_TERM = [r"\b(?:today|tomorrow|intraday|day trade|next session|next trading day|opening|market open)\b"]
 DIRECT_REQUEST = [r"\?", r"\b(?:can someone|anyone know|please|help me|how do i|where can i|what should i|need|looking for|want|give me|share|show me|tell me)\b"]
@@ -62,7 +62,16 @@ RECAP_MARKERS = [r"\bhere(?:'s| is) (?:my|the) levels?\b", r"\blevels? (?:for|at
 
 
 def clean(x):
-    return "" if pd.isna(x) else str(x).strip()
+    if pd.isna(x):
+        return ""
+    text = str(x)
+    # Reddit feeds can contain HTML markup and escaped attributes. Strip tags
+    # before evidence extraction so reviewers see human-readable sentences.
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"&(?:amp|lt|gt|quot|#39|nbsp);", " ", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def found_any(text, patterns):
@@ -70,14 +79,22 @@ def found_any(text, patterns):
 
 
 def first_match_sentence(text, patterns):
-    # Preserve enough context for human audit while preventing evidence from being
-    # assembled from unrelated sentences.
+    # Evidence must come from one sentence; never combine unrelated parts of a post.
     parts = re.split(r"(?<=[.!?])\s+|\n+", clean(text))
     for sentence in parts:
-        s = sentence.strip()
+        s = re.sub(r"\s+", " ", sentence).strip(" -•")
         if s and found_any(s, patterns):
             return s[:280]
     return ""
+
+def evidence_strength(evidence_type, explicit, unmet_need, competitor, existing_levels):
+    if evidence_type == "Direct request":
+        return "Strong"
+    if evidence_type == "Problem-aware":
+        return "Moderate"
+    if evidence_type == "Existing solution":
+        return "Moderate" if competitor else "Weak"
+    return "Weak"
 
 
 def signal_id(platform, url, text):
@@ -144,6 +161,8 @@ def analyze(text):
     else:
         evidence_type = "Context-only"
         evidence_sentence = ""
+
+    strength = evidence_strength(evidence_type, explicit, unmet_need, competitor, existing_levels)
 
     # Context-only is explicitly not a Daily Levels lead. This is the main recall/
     # precision correction: mentions of levels inside strategy, risk or recap posts
@@ -285,7 +304,14 @@ def analyze(text):
         "Generic, educational, automated, or promotional content; not a direct lead." if evidence_type in {"Generic/educational", "Automated", "Spam"} else
         "No concrete Daily Levels need detected."
     )
-    content_angle = "Daily support/resistance from the opening price" if true_need else "Educational content about identifying reliable daily levels"
+    if sales_ready:
+        content_angle = "Daily support/resistance from the opening price"
+    elif evidence_type == "Problem-aware":
+        content_angle = "How to get reliable daily support/resistance levels"
+    elif evidence_type == "Existing solution":
+        content_angle = "Compare level sources and explain a simple opening-price methodology"
+    else:
+        content_angle = "Educational content about identifying reliable daily levels"
     buyer_stage = "Ready to review" if sales_ready else ("Problem-aware" if evidence_type == "Problem-aware" else ("Exploring" if evidence_type == "Direct request" else "Not a lead"))
     explanation = " | ".join(reasons) if reasons else "No strong Daily Levels need detected"
     if flags: explanation += " | Qualification flags: " + ", ".join(flags)
@@ -305,6 +331,6 @@ def analyze(text):
         "sales_ready": bool(sales_ready), "buyer_stage": buyer_stage,
         "lead_reason": lead_reason, "content_angle": content_angle,
         "unmet_need": bool(unmet_need), "evidence_type": evidence_type,
-        "evidence_sentence": evidence_sentence,
+        "evidence_strength": strength, "evidence_sentence": evidence_sentence,
         "qualification_version": QUALIFICATION_VERSION,
     }

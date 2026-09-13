@@ -58,3 +58,7 @@ Existing stored signals are automatically re-qualified once to remove legacy V3.
 - Detects stated/existing level sources and reduces qualification when the trader already has levels.
 - Strongly downgrades signals that cite an alternative level provider.
 - HOT requires explicit need, strong buying intent, relevance, and product fit.
+
+
+### V3.6.3
+Lead Recall + Evidence Quality Fix: sentence-level evidence, cleaned HTML/URLs, evidence strength (Strong/Moderate/Weak), tighter problem-aware detection, and consistent qualification versioning.
