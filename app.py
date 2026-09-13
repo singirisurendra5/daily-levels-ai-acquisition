@@ -106,7 +106,19 @@ signals=current_signals()
 if signals.empty:
     st.info('No public signals yet. Add permitted public sources in Source Manager below.')
 else:
-    for c in ['interest_level','market','platform','evidence_type','evidence_sentence','reason','recommended_action','landing_page']:
+    # Backward-compatible fields: older V3/V4 SQLite databases may not have
+    # the new simple trader-finder columns yet. Derive them safely instead of
+    # crashing the dashboard.
+    if 'interest_score' not in signals.columns:
+        if 'priority_score' in signals.columns:
+            signals['interest_score'] = pd.to_numeric(signals['priority_score'], errors='coerce').fillna(0).astype(int)
+        elif 'intent_score' in signals.columns:
+            signals['interest_score'] = pd.to_numeric(signals['intent_score'], errors='coerce').fillna(0).astype(int)
+        else:
+            signals['interest_score'] = 0
+    if 'interest_level' not in signals.columns:
+        signals['interest_level'] = signals['interest_score'].apply(lambda x: 'HIGH' if x >= 80 else ('MEDIUM' if x >= 50 else 'LOW'))
+    for c in ['market','platform','evidence_type','evidence_sentence','reason','recommended_action','landing_page']:
         if c not in signals: signals[c]=''
 
     f1,f2,f3=st.columns(3)
