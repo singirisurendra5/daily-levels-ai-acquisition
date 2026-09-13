@@ -162,7 +162,7 @@ if not filtered.empty:
 st.subheader('4. Opportunity queue')
 st.caption(f'Showing {len(filtered)} opportunities')
 queue_cols=['platform','text','market','intent_score','customer_fit_score','category','problem','recommended_action','status','url']
-st.dataframe(filtered[queue_cols],use_container_width=True,hide_index=True,column_config={'url':st.column_config.LinkColumn('Source',display_text='Open'),'intent_score':st.column_config.NumberColumn('Intent',0,100),'customer_fit_score':st.column_config.NumberColumn('Fit',0,100)})
+st.dataframe(filtered[queue_cols],use_container_width=True,hide_index=True,column_config={'url':st.column_config.LinkColumn('Source',display_text='Open'),'intent_score':st.column_config.NumberColumn('Intent', min_value=0, max_value=100, format='%d'),'customer_fit_score':st.column_config.NumberColumn('Fit', min_value=0, max_value=100, format='%d')})
 
 st.subheader('5. Human review + action tracking')
 if not filtered.empty:
