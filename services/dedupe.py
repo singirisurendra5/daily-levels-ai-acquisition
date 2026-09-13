@@ -1,7 +1,15 @@
 import re
 import pandas as pd
+import hashlib
 from difflib import SequenceMatcher
-from .intelligence import near_duplicate_key
+
+
+def near_duplicate_key(text):
+    """Create a stable normalized hash without depending on intelligence.py."""
+    normalized = re.sub(r"https?://\S+", " ", str(text or "").lower())
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
 
 
 def normalize_text(value):
