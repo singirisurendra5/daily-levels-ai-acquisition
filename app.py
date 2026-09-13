@@ -18,7 +18,7 @@ DB_PATH = ROOT / 'data' / 'daily_levels.db'
 
 st.set_page_config(page_title='Daily Levels — AI Customer Acquisition', page_icon='📈', layout='wide')
 st.title('Daily Levels — AI Customer Acquisition')
-st.caption('MVP V3.3 • Live public-signal acquisition • Persistent opportunity workflow • Human-in-the-loop')
+st.caption('MVP V3.3.1 • Live public-signal acquisition • Persistent opportunity workflow • Human-in-the-loop')
 
 store = Store(DB_PATH)
 
@@ -132,11 +132,20 @@ def run_configured_sources(cfg):
 cfg = load_json(SOURCES_PATH, {'rss_feeds':[], 'reddit':[], 'youtube_channels':[]})
 recommended = load_json(RECOMMENDED_PATH, {'rss_feeds':[], 'reddit':[], 'youtube_channels':[]})
 
+# On a fresh deployment, keep the app immediately usable: seed the recommended
+# public sources in memory. The user still explicitly starts fetching.
+if not any(cfg.get(k, []) for k in ['rss_feeds', 'reddit', 'youtube_channels']):
+    cfg = {k: [dict(x) for x in recommended.get(k, [])] for k in ['rss_feeds', 'reddit', 'youtube_channels']}
+    for k in cfg:
+        for item in cfg[k]:
+            item['enabled'] = True
+    save_sources(cfg)
+
 with st.expander('⚙️ Source Manager', expanded=True):
     st.caption('Only add public sources you are permitted to access. The app does not message users or access private data.')
     actions = st.columns(3)
     with actions[0]:
-        if st.button('✨ Load recommended public RSS sources', use_container_width=True):
+        if st.button('✨ Reset to recommended public sources', use_container_width=True):
             for key in ['rss_feeds','reddit','youtube_channels']:
                 existing_keys = {source_key(x, 'rss' if key=='rss_feeds' else 'reddit' if key=='reddit' else 'youtube') for x in cfg.get(key,[])}
                 for item in recommended.get(key,[]):
@@ -144,16 +153,16 @@ with st.expander('⚙️ Source Manager', expanded=True):
                     if source_key(item, kind) not in existing_keys:
                         cfg.setdefault(key, []).append(item)
             save_sources(cfg)
-            st.success('Recommended public RSS sources added.')
+            st.success('Recommended public sources loaded.')
             st.rerun()
     with actions[1]:
         if st.button('🧹 Remove all configured sources', use_container_width=True):
             save_sources({'rss_feeds':[], 'reddit':[], 'youtube_channels':[]})
             st.rerun()
     with actions[2]:
-        if st.button('🔄 Fetch live signals now', type='primary', use_container_width=True):
+        if st.button('🚀 Start live acquisition', type='primary', use_container_width=True):
             if not configured_sources(cfg):
-                st.warning('Add at least one enabled public source first.')
+                st.error('No enabled public sources are configured. Use the reset button or add a permitted source.')
             else:
                 with st.spinner('Fetching configured public sources…'):
                     _, errors, meta = run_configured_sources(cfg)
@@ -204,10 +213,19 @@ with st.expander('⚙️ Source Manager', expanded=True):
 configured_total = sum(len(cfg.get(k,[])) for k in ['rss_feeds','reddit','youtube_channels'])
 enabled_total = len(configured_sources(cfg))
 metrics = st.columns(4)
+runs_df = store.runs()
+if not runs_df.empty:
+    latest_run = runs_df.iloc[0]['run_at']
+    latest_rows = runs_df[runs_df['run_at'] == latest_run]
+    persistent_new = int(latest_rows['new_rows'].sum())
+    persistent_last = str(latest_run)
+else:
+    persistent_new = sum(x[3] for x in st.session_state.get('last_fetch_meta', []))
+    persistent_last = st.session_state.get('last_fetch')
 metrics[0].metric('Configured sources', configured_total)
 metrics[1].metric('Enabled sources', enabled_total)
-metrics[2].metric('New on last fetch', sum(x[3] for x in st.session_state.get('last_fetch_meta',[])))
-metrics[3].metric('Last fetch', (st.session_state.get('last_fetch') or 'Not yet').replace('T',' ')[:19])
+metrics[2].metric('New on last fetch', persistent_new)
+metrics[3].metric('Last fetch', (persistent_last or 'Not yet').replace('T',' ')[:19])
 
 if st.session_state.get('last_errors'):
     with st.expander('Ingestion warnings'):

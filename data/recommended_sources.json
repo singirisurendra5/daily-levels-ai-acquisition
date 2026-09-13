@@ -1,11 +1,41 @@
 {
-  "rss_feeds": [
-    {"platform":"Google News — NIFTY levels","url":"https://news.google.com/rss/search?q=NIFTY%20support%20resistance%20trading&hl=en-IN&gl=IN&ceid=IN:en"},
-    {"platform":"Google News — Bank Nifty levels","url":"https://news.google.com/rss/search?q=Bank%20Nifty%20support%20resistance%20trading&hl=en-IN&gl=IN&ceid=IN:en"},
-    {"platform":"Google News — BTC levels","url":"https://news.google.com/rss/search?q=Bitcoin%20BTC%20support%20resistance%20trading&hl=en-US&gl=US&ceid=US:en"},
-    {"platform":"Google News — Gold/XAUUSD levels","url":"https://news.google.com/rss/search?q=XAUUSD%20gold%20support%20resistance%20trading&hl=en-US&gl=US&ceid=US:en"},
-    {"platform":"Google News — Nasdaq levels","url":"https://news.google.com/rss/search?q=Nasdaq%20support%20resistance%20trading&hl=en-US&gl=US&ceid=US:en"}
+  "rss_feeds": [],
+  "reddit": [
+    {
+      "subreddit": "stocks",
+      "query": "NIFTY support resistance",
+      "sort": "new",
+      "limit": 25,
+      "enabled": true
+    },
+    {
+      "subreddit": "options",
+      "query": "NIFTY support resistance",
+      "sort": "new",
+      "limit": 25,
+      "enabled": true
+    },
+    {
+      "subreddit": "daytrading",
+      "query": "support resistance levels",
+      "sort": "new",
+      "limit": 25,
+      "enabled": true
+    },
+    {
+      "subreddit": "CryptoCurrency",
+      "query": "BTC support resistance levels",
+      "sort": "new",
+      "limit": 25,
+      "enabled": true
+    },
+    {
+      "subreddit": "Forex",
+      "query": "XAUUSD support resistance",
+      "sort": "new",
+      "limit": 25,
+      "enabled": true
+    }
   ],
-  "reddit": [],
   "youtube_channels": []
 }

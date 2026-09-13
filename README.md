@@ -1,6 +1,6 @@
 # Daily Levels — AI Customer Acquisition
 
-MVP V3.3: live public-signal acquisition with persistent local workflow and human-in-the-loop review.
+MVP V3.3.1: live public-signal acquisition with persistent local workflow and human-in-the-loop review.
 
 ## Run
 
@@ -28,3 +28,11 @@ Recommended sources are public RSS search feeds and are provided as a starting p
 ## Storage
 
 Signals, source runs, and conversion events are stored in `data/daily_levels.db`. On hosted environments, local filesystem persistence depends on the hosting provider's storage model; for durable production persistence, move the storage layer to a managed database in a later release.
+
+
+## V3.3.1 changes
+- Fresh deployments automatically seed the recommended public community sources.
+- One-click `Start live acquisition` fetches enabled sources.
+- Last-fetch metrics are read from persistent run history.
+- Recommended sources focus on public Reddit search feeds for trading-intent discovery; no private data or automated outreach.
+- Demo/sample data remains separate from live acquisition mode.
