@@ -48,7 +48,7 @@ class Store:
     vals[cols.index('explicit_need')]=int(bool(r.get('explicit_need',False)))
     vals[cols.index('competition_detected')]=int(bool(r.get('competition_detected',False)))
     vals[cols.index('quality_flags')] = safe_text(r.get('quality_flags',''))
-    vals[cols.index('qualification_version')] = safe_text(r.get('qualification_version','3.6.3')) or '3.6.3'
+    vals[cols.index('qualification_version')] = safe_text(r.get('qualification_version','3.6.4')) or '3.6.4'
     vals[cols.index('sales_ready')] = int(bool(r.get('sales_ready',False)))
     vals[cols.index('unmet_need')] = int(bool(r.get('unmet_need',False)))
     exists=con.execute('SELECT 1 FROM signals WHERE signal_id=?',(sid,)).fetchone()

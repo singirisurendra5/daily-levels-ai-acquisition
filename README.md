@@ -60,5 +60,5 @@ Existing stored signals are automatically re-qualified once to remove legacy V3.
 - HOT requires explicit need, strong buying intent, relevance, and product fit.
 
 
-### V3.6.3
-Lead Recall + Evidence Quality Fix: sentence-level evidence, cleaned HTML/URLs, evidence strength (Strong/Moderate/Weak), tighter problem-aware detection, and consistent qualification versioning.
+### V3.6.4
+Lead Recall + Evidence Quality Fix: sentence-level evidence, cleaned HTML/URLs, evidence strength (Strong/Moderate/Weak), calibrated natural-language direct/problem-aware requests, evidence ranking, context-only suppression, and consistent qualification versioning.

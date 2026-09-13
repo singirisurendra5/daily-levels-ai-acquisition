@@ -1,8 +1,9 @@
 import re
 import hashlib
+import html
 import pandas as pd
 
-QUALIFICATION_VERSION = "3.6.3"
+QUALIFICATION_VERSION = "3.6.4"
 
 MARKETS = {
     "India (NIFTY)": [r"\bnifty(?:\s*50)?\b"],
@@ -26,10 +27,10 @@ SUPPORTED_MARKETS = set(MARKETS)
 # Evidence-first qualification. Patterns intentionally require the request/problem
 # and the levels object to be close together, or in the same sentence.
 DIRECT_LEVEL_REQUEST = [
-    r"\b(?:where\s+(?:can|do)\s+i\s+(?:get|find)|where\s+(?:are|can\s+i\s+get|do\s+i\s+get)|what\s+(?:are|is)|what's|whats|need|give\s+me|share|show\s+me|tell\s+me|can\s+someone|anyone\s+know|help\s+me|how\s+do\s+i\s+(?:get|find|calculate))\b.{0,55}\b(?:support|resistance|levels?)\b",
+    r"\b(?:where\s+(?:can|do)\s+i\s+(?:get|find)|where\s+(?:are|can\s+i\s+get|do\s+i\s+get)|what\s+(?:are|is)|what's|whats|need|give\s+me|share|show\s+me|tell\s+me|can\s+someone|anyone\s+(?:know|have)|does\s+anyone\s+(?:know|have)|help\s+me|how\s+do\s+i\s+(?:get|find|calculate)|recommend(?:\s+a)?\s+(?:source|way)|best\s+(?:source|way))\b.{0,65}\b(?:support|resistance|levels?)\b",
     r"\b(?:support|resistance|levels?)\b.{0,35}\bfor\s+(?:today|tomorrow|next\s+session|the\s+next\s+session)\b\s*\?",
-    r"\b(?:need|looking\s+for|want)\b.{0,45}\b(?:today|tomorrow|next\s+session)\b.{0,45}\b(?:support|resistance|levels?)\b",
-    r"\blooking\s+for\s+(?:reliable|accurate|key|clear|daily|predefined)\b.{0,70}\b(?:support|resistance|levels?)\b",
+    r"\b(?:need|looking\s+for|want|trying\s+to\s+get|trying\s+to\s+find)\b.{0,65}\b(?:today|tomorrow|next\s+session)\b.{0,65}\b(?:support|resistance|levels?)\b",
+    r"\blooking\s+for\s+(?:reliable|accurate|key|clear|daily|predefined)\b.{0,90}\b(?:support|resistance|levels?)\b",
 ]
 
 # Problem-aware evidence is deliberately narrower than V3.6.1. The complaint must
@@ -56,7 +57,6 @@ EXISTING_LEVELS = [
     r"\bsource\s*[:=-]\s*(?:https?://)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\b",
     r"\bsource\s+(?:for|of)\s+(?:the\s+)?levels?\b",
     r"\b(?:my|our|these)\s+levels?\b",
-    r"\b(?:call|put)\s+wall\b",
 ]
 RECAP_MARKERS = [r"\bhere(?:'s| is) (?:my|the) levels?\b", r"\blevels? (?:for|at)\s+\d", r"\bmy trade recap\b", r"\btrade recap\b", r"\bmarket recap\b"]
 
@@ -69,7 +69,8 @@ def clean(x):
     # before evidence extraction so reviewers see human-readable sentences.
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"https?://\S+", " ", text)
-    text = re.sub(r"&(?:amp|lt|gt|quot|#39|nbsp);", " ", text, flags=re.I)
+    text = html.unescape(text)
+    text = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -124,10 +125,26 @@ def analyze(text):
     short_term = found_any(text, SHORT_TERM)
     recap = found_any(text, RECAP_MARKERS)
 
+    # Search sentence-by-sentence so an unrelated phrase later in a long post cannot
+    # turn a context mention into a lead. Prefer direct demand over problem evidence.
     explicit_sentence = first_match_sentence(text, DIRECT_LEVEL_REQUEST)
     problem_sentence = first_match_sentence(text, PROBLEM_AWARE)
     explicit = bool(explicit_sentence)
     unmet_need = bool(problem_sentence)
+
+    # Recall-friendly question patterns: these capture natural public requests such
+    # as “does anyone have good NIFTY levels?” without matching “where price faces
+    # resistance” inside an unrelated educational post.
+    if not explicit:
+        q_patterns = [
+            r"\b(?:does\s+anyone|can\s+anyone|anyone)\b.{0,45}\b(?:support|resistance|levels?)\b",
+            r"\b(?:good|reliable|accurate|best)\s+(?:source|way)\b.{0,45}\b(?:support|resistance|levels?)\b",
+            r"\b(?:support|resistance|levels?)\b.{0,30}\b(?:today|tomorrow|next\s+session)\b.{0,10}\?",
+        ]
+        q_sentence = first_match_sentence(text, q_patterns)
+        if q_sentence:
+            explicit_sentence = q_sentence
+            explicit = True
 
     # Negative intent phrases override accidental regex matches.
     if found_any(text, [r"\bcurious how others\b", r"\banyone else seeing\b", r"\bmy plan\b"]):

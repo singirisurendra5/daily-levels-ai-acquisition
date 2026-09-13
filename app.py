@@ -18,7 +18,7 @@ DB_PATH = ROOT / 'data' / 'daily_levels.db'
 
 st.set_page_config(page_title='Daily Levels — AI Customer Acquisition', page_icon='📈', layout='wide')
 st.title('Daily Levels — AI Customer Acquisition')
-st.caption('MVP V3.6.3 • Accuracy fix • True-need sales qualification • Public-signal acquisition • Human-in-the-loop')
+st.caption('MVP V3.6.4 • Lead recall + evidence quality fix • True-need sales qualification • Public-signal acquisition • Human-in-the-loop')
 
 store = Store(DB_PATH)
 
@@ -91,7 +91,7 @@ def requalify_stored_signals():
 
 
 def needs_requalification(df):
-    return (not df.empty and ('qualification_version' not in df.columns or df.qualification_version.fillna('legacy').astype(str).ne('3.6.3').any()))
+    return (not df.empty and ('qualification_version' not in df.columns or df.qualification_version.fillna('legacy').astype(str).ne('3.6.4').any()))
 
 
 def fetch_one(kind, item):
@@ -286,6 +286,7 @@ st.sidebar.header('Opportunity filters')
 platform_options=['All']+sorted(live_results.platform.dropna().unique().tolist()) if not live_results.empty else ['All']
 market_options=['All']+sorted(live_results.market.dropna().unique().tolist()) if not live_results.empty else ['All']
 problem_options=['All']+sorted(live_results.problem.dropna().unique().tolist()) if not live_results.empty else ['All']
+evidence_options=['All']+sorted(live_results.evidence_type.dropna().unique().tolist()) if not live_results.empty and 'evidence_type' in live_results else ['All']
 status_options=['All']+STATUS_OPTIONS
 platform=st.sidebar.selectbox('Platform',platform_options)
 market=st.sidebar.selectbox('Market',market_options)
@@ -300,6 +301,7 @@ if not filtered.empty:
     if platform!='All': filtered=filtered[filtered.platform==platform]
     if market!='All': filtered=filtered[filtered.market.str.contains(re.escape(market),case=False,na=False)]
     if problem!='All': filtered=filtered[filtered.problem==problem]
+    if evidence_type_filter!='All' and 'evidence_type' in filtered: filtered=filtered[filtered.evidence_type==evidence_type_filter]
     if status!='All': filtered=filtered[filtered.status==status]
     filtered=filtered[(filtered.priority_score>=min_score)&(filtered.product_fit_score>=min_fit)]
     if keyword.strip(): filtered=filtered[filtered.text.str.contains(re.escape(keyword.strip()),case=False,na=False)]
@@ -320,7 +322,7 @@ else:
 
 st.subheader('4. Opportunity queue')
 st.caption(f'Showing {len(filtered)} opportunities • User-intent: {int((filtered.get("signal_type", pd.Series(dtype=str))=="User-intent signal").sum()) if not filtered.empty else 0}')
-queue_cols=['platform','text','market','evidence_type','evidence_strength','relevance_score','buying_intent_score','product_fit_score','priority_score','category','sales_ready','buyer_stage','competition_detected','problem','recommended_action','status','url']
+queue_cols=['platform','text','market','evidence_type','evidence_strength','evidence_sentence','relevance_score','buying_intent_score','product_fit_score','priority_score','category','sales_ready','buyer_stage','competition_detected','problem','recommended_action','status','url']
 if filtered.empty:
     st.info('Opportunity queue is empty.')
 else:
